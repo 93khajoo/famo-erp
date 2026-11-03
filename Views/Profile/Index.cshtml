@@ -1,0 +1,400 @@
+@model FamoBoard.Models.ApplicationUser
+@{
+    ViewData["Title"] = "پروفایل";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var initials = Model.DisplayName?.Length > 0 ? Model.DisplayName[0].ToString().ToUpper() : (Model.Email?.Length > 0 ? Model.Email[0].ToString().ToUpper() : "?");
+}
+
+<style>
+.profile-page {
+    min-height: calc(100vh - 56px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    background: var(--light);
+}
+
+.profile-card {
+    width: 100%;
+    max-width: 520px;
+    background: var(--white);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.profile-header {
+    background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 100%);
+    padding: 40px 32px 60px;
+    text-align: center;
+    position: relative;
+}
+
+.profile-header-title {
+    color: rgba(255,255,255,.75);
+    font-size: .8rem;
+    font-weight: 500;
+    letter-spacing: .04em;
+    margin-bottom: 20px;
+}
+
+.avatar-zone {
+    position: relative;
+    display: inline-block;
+}
+
+.p-avatar-img {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid rgba(255,255,255,.9);
+    box-shadow: 0 4px 16px rgba(0,0,0,.2);
+    display: block;
+}
+
+.p-avatar-placeholder {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.25);
+    border: 3px solid rgba(255,255,255,.9);
+    box-shadow: 0 4px 16px rgba(0,0,0,.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.avatar-edit-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 36px;
+    background: rgba(0,0,0,.45);
+    border-bottom-left-radius: 50%;
+    border-bottom-right-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .2s;
+    border-radius: 50%;
+}
+
+.avatar-zone:hover .avatar-edit-overlay { opacity: 1; }
+
+.avatar-edit-overlay i { color: #fff; font-size: .85rem; }
+
+#avatarUploadMsg {
+    font-size: .78rem;
+    margin-top: 6px;
+    min-height: 16px;
+    color: rgba(255,255,255,.85);
+}
+
+.profile-name-display {
+    color: #fff;
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 14px;
+}
+
+.profile-email-display {
+    color: rgba(255,255,255,.7);
+    font-size: .82rem;
+    margin-top: 4px;
+}
+
+.profile-body {
+    padding: 32px;
+    margin-top: -24px;
+    position: relative;
+}
+
+.profile-section {
+    background: var(--white);
+    border-radius: var(--r);
+    padding: 24px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+}
+
+.section-label {
+    font-size: .75rem;
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.field-group {
+    margin-bottom: 16px;
+}
+
+.field-group:last-child { margin-bottom: 0; }
+
+.field-label {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--mid);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.field-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r);
+    font-family: inherit;
+    font-size: .9rem;
+    color: var(--dark);
+    background: var(--white);
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+}
+
+.field-input:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(46,125,114,.1);
+}
+
+.field-input.readonly {
+    background: var(--light);
+    color: var(--mid);
+    cursor: default;
+}
+
+.pwd-wrap {
+    position: relative;
+}
+
+.pwd-wrap .field-input {
+    padding-left: 44px;
+}
+
+.pwd-toggle {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--mid);
+    cursor: pointer;
+    padding: 4px;
+    font-size: .9rem;
+    transition: color .15s;
+}
+
+.pwd-toggle:hover { color: var(--teal); }
+
+.save-btn {
+    width: 100%;
+    padding: 12px;
+    background: var(--teal);
+    color: #fff;
+    border: none;
+    border-radius: var(--r);
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .2s, transform .1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.save-btn:hover { background: #246058; }
+.save-btn:active { transform: scale(.98); }
+
+.profile-alert {
+    border-radius: var(--r);
+    padding: 12px 16px;
+    font-size: .88rem;
+    margin-bottom: 16px;
+    display: none;
+}
+
+.profile-alert.success {
+    background: #E8F5E9;
+    color: #2E7D32;
+    border: 1px solid #C8E6C9;
+}
+
+.profile-alert.error {
+    background: #FFEBEE;
+    color: #C62828;
+    border: 1px solid #FFCDD2;
+}
+</style>
+
+<div class="profile-page">
+  <div class="profile-card">
+
+    <!-- Header gradient با آواتار -->
+    <div class="profile-header">
+      <div class="profile-header-title">پروفایل من</div>
+      <div class="avatar-zone">
+        @if (!string.IsNullOrEmpty(Model.AvatarUrl))
+        {
+          <img id="avatarImg" src="@Model.AvatarUrl" class="p-avatar-img" />
+          <div id="avatarPlaceholder" class="p-avatar-placeholder" style="display:none">@initials</div>
+        }
+        else
+        {
+          <div id="avatarPlaceholder" class="p-avatar-placeholder">@initials</div>
+          <img id="avatarImg" src="" class="p-avatar-img" style="display:none" />
+        }
+        <label for="avatarInput" class="avatar-edit-overlay" title="تغییر عکس پروفایل">
+          <i class="fas fa-camera"></i>
+        </label>
+      </div>
+      <input type="file" id="avatarInput" accept="image/*" class="d-none" onchange="uploadAvatar(this)" style="display:none" />
+      <div id="avatarUploadMsg"></div>
+      <div class="profile-name-display" id="displayNameHeader">@Model.DisplayName</div>
+      <div class="profile-email-display">@Model.Email</div>
+    </div>
+
+    <!-- Body -->
+    <div class="profile-body">
+
+      <div id="profileAlert" class="profile-alert"></div>
+
+      <form id="profileForm">
+
+        <!-- اطلاعات عمومی -->
+        <div class="profile-section">
+          <div class="section-label"><i class="fas fa-user"></i> اطلاعات کاربری</div>
+
+          <div class="field-group">
+            <label class="field-label" for="displayName">نام نمایشی</label>
+            <input type="text" class="field-input" name="displayName" id="displayName"
+                   value="@Model.DisplayName" placeholder="نام نمایشی" required />
+          </div>
+          <div class="field-group">
+            <label class="field-label">نام کاربری</label>
+            <input type="text" class="field-input readonly" value="@Model.UserName" readonly />
+          </div>
+          <div class="field-group">
+            <label class="field-label">ایمیل</label>
+            <input type="text" class="field-input readonly" value="@Model.Email" readonly />
+          </div>
+        </div>
+
+        <!-- تغییر رمز عبور -->
+        <div class="profile-section">
+          <div class="section-label"><i class="fas fa-lock"></i> تغییر رمز عبور <span style="font-size:.75rem;font-weight:400;color:var(--mid)">(اختیاری)</span></div>
+
+          <div class="field-group">
+            <label class="field-label" for="currentPassword">رمز فعلی</label>
+            <div class="pwd-wrap">
+              <input type="password" class="field-input" name="currentPassword" id="currentPassword" placeholder="رمز عبور فعلی" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('currentPassword')"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="newPassword">رمز جدید</label>
+            <div class="pwd-wrap">
+              <input type="password" class="field-input" name="newPassword" id="newPassword" placeholder="رمز عبور جدید" />
+              <button type="button" class="pwd-toggle" onclick="togglePwd('newPassword')"><i class="fas fa-eye"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="save-btn">
+          <i class="fas fa-check"></i> ذخیره تغییرات
+        </button>
+
+      </form>
+    </div>
+
+  </div>
+</div>
+
+@section Scripts {
+<script>
+async function uploadAvatar(input) {
+    if (!input.files.length) return;
+    const fd = new FormData();
+    fd.append('avatar', input.files[0]);
+    const msg = document.getElementById('avatarUploadMsg');
+    msg.textContent = 'در حال آپلود...';
+    const res = await fetch('/Profile/UploadAvatar', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.success) {
+        msg.textContent = '✓ عکس پروفایل به‌روز شد';
+        const img = document.getElementById('avatarImg');
+        img.src = data.url + '?t=' + Date.now();
+        img.style.display = 'block';
+        const ph = document.getElementById('avatarPlaceholder');
+        if (ph) ph.style.display = 'none';
+        setTimeout(() => msg.textContent = '', 3000);
+    } else {
+        msg.textContent = data.message || 'خطا در آپلود';
+        msg.style.color = '#ff8a80';
+    }
+}
+
+document.getElementById('profileForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const alertEl = document.getElementById('profileAlert');
+    const submitBtn = this.querySelector('.save-btn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ذخیره...';
+
+    const body = {
+        displayName: document.getElementById('displayName').value.trim(),
+        currentPassword: document.getElementById('currentPassword').value,
+        newPassword: document.getElementById('newPassword').value
+    };
+    const res = await fetch('/Profile/Update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    alertEl.className = 'profile-alert ' + (data.success ? 'success' : 'error');
+    alertEl.textContent = data.message;
+    alertEl.style.display = 'block';
+
+    if (data.success) {
+        document.getElementById('displayNameHeader').textContent = body.displayName;
+        document.getElementById('currentPassword').value = '';
+        document.getElementById('newPassword').value = '';
+        setTimeout(() => alertEl.style.display = 'none', 4000);
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-check"></i> ذخیره تغییرات';
+});
+
+function togglePwd(id) {
+    const el = document.getElementById(id);
+    const btn = el.nextElementSibling;
+    el.type = el.type === 'password' ? 'text' : 'password';
+    btn.innerHTML = el.type === 'password' ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-eye-slash"></i>';
+}
+</script>
+}

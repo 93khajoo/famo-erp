@@ -1,0 +1,333 @@
+@model FamoBoard.Models.Card
+@{
+  string uid=ViewBag.UserId; bool isSM=ViewBag.IsScrumMaster; bool canEdit=isSM||Model.CreatedById==uid;
+  var members=ViewBag.ProjectMembers as List<FamoBoard.Models.ProjectMember>;
+  var activeTimer=ViewBag.ActiveTimer as FamoBoard.Models.TimeLog;
+  var taskTypes=ViewBag.TaskTypes as List<FamoBoard.Models.TaskType> ?? new();
+  var emojis=new[]{"👍","❤️","😄","🎉","🔥","👀"};
+  string Fmt(long s){var h=s/3600;var m=(s%3600)/60;var sec=s%60;return $"{h:D2}:{m:D2}:{sec:D2}";}
+  var pc=new System.Globalization.PersianCalendar();
+  string ToSh(DateTime d)=>$"{pc.GetYear(d)}/{pc.GetMonth(d):D2}/{pc.GetDayOfMonth(d):D2}";
+  string ToShTime(DateTime d)=>$"{pc.GetYear(d)}/{pc.GetMonth(d):D2}/{pc.GetDayOfMonth(d):D2} {d.ToLocalTime():HH:mm}";
+  // For jalali picker input values (ISO format for server, Jalali display handled by JS)
+}
+<div class="card-detail">
+  <div class="card-detail-header" style="border-top:4px solid @Model.Color">
+    <button class="card-close-btn" onclick="closeCard()"><i class="fas fa-times"></i></button>
+    <h2 id="cardTitleDisplay">@Model.Title</h2>
+    <div class="card-meta">
+      <span class="card-project"><i class="fas fa-folder"></i> @Model.Project?.Name</span>
+      @if(Model.Deadline.HasValue){ var od=Model.Deadline.Value<DateTime.UtcNow;
+        <span class="card-deadline-badge @(od?"overdue":"")"><i class="fas fa-clock"></i> ددلاین: @ToSh(Model.Deadline.Value)</span>
+      }
+      @if(canEdit){
+        <button class="btn-sm" style="margin-right:auto" onclick="toggleEditCard()"><i class="fas fa-pen"></i> ویرایش</button>
+        <button class="btn-sm" style="background:#F3E5F5;color:#6A1B9A;border:1px solid #CE93D8" onclick="archiveCardFromBoard(@Model.Id)"><i class="fas fa-archive"></i> آرشیو</button>
+        <button class="btn-sm btn-danger-sm" onclick="deleteCardFromBoard(@Model.Id)"><i class="fas fa-trash"></i> حذف کارت</button>
+      }
+    </div>
+  </div>
+
+  <!-- Edit form (collapsed by default) -->
+  @if(canEdit){
+  <div id="editCardForm" style="display:none;padding:16px 20px;background:var(--light);border-bottom:1px solid var(--border)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>عنوان</label><input type="text" id="editTitle" value="@Model.Title" /></div>
+      <div class="form-group"><label>رنگ</label><input type="color" id="editColor" value="@Model.Color" style="height:40px" /></div>
+      <div class="form-group" style="grid-column:1/-1"><label>توضیحات</label><textarea id="editDesc" rows="2">@Model.Description</textarea></div>
+      <div class="form-group">
+        <label>ددلاین</label>
+        <input type="text" id="editDeadline" class="jalali-input" placeholder="انتخاب تاریخ..."
+               data-gregorian="@Model.Deadline?.ToString("yyyy-MM-dd")" autocomplete="off" readonly />
+      </div>
+      <div class="form-group">
+        <label>تاریخ شروع کار</label>
+        <input type="text" id="editStartedAt" class="jalali-input" placeholder="انتخاب تاریخ..."
+               data-gregorian="@Model.StartedAt?.ToString("yyyy-MM-dd")" autocomplete="off" readonly />
+      </div>
+    </div>
+    @if(taskTypes.Any()){
+    <div class="form-group" style="margin-top:8px">
+      <label>مدل تسک <small style="color:var(--mid)">(نرخ حقوقی)</small></label>
+      <select id="editTaskType" style="width:100%">
+        <option value="0">--- نرخ پیش‌فرض عضو ---</option>
+        @foreach(var tt in taskTypes){
+          if(Model.TaskTypeId==tt.Id){
+            <option value="@tt.Id" selected>@tt.Name — @tt.Rate.ToString("N0") تومان</option>
+          } else {
+            <option value="@tt.Id">@tt.Name — @tt.Rate.ToString("N0") تومان</option>
+          }
+        }
+      </select>
+    </div>
+    }
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button onclick="saveCardEdit(@Model.Id)" class="btn-primary"><i class="fas fa-save"></i> ذخیره</button>
+      <button onclick="toggleEditCard()" class="btn-secondary">انصراف</button>
+    </div>
+  </div>
+  }
+
+  <div class="card-detail-body">
+    <!-- TOP ROW: Left (checklist+timer) + Right (assignees) side by side -->
+    <div class="card-top-row">
+      <!-- Checklists -->
+      <div class="card-section-box">
+        <div class="section-header"><h3><i class="fas fa-check-square"></i> چک‌لیست‌ها</h3><button class="btn-sm" onclick="toggleAddChecklist()"><i class="fas fa-plus"></i></button></div>
+        <div id="addChecklistForm" style="display:none" class="inline-form">
+          <input type="text" id="newChecklistName" placeholder="نام چک‌لیست..." />
+          <button onclick="addChecklist(@Model.Id)" class="btn-sm btn-primary">افزودن</button>
+          <button onclick="toggleAddChecklist()" class="btn-sm">لغو</button>
+        </div>
+        @foreach(var cl in Model.CheckLists){
+          var done=cl.Items.Count(i=>i.IsCompleted); var total=cl.Items.Count;
+          <div class="checklist" data-cl-id="@cl.Id">
+            <div class="checklist-header">
+              <strong>@cl.Name</strong>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span style="font-size:.75rem;color:var(--mid)">@done/@total</span>
+                @if(isSM){<button class="list-action-btn danger" onclick="deleteChecklist(@cl.Id)" title="حذف"><i class="fas fa-trash"></i></button>}
+              </div>
+            </div>
+            <div class="cl-progress-bar"><div style="width:@(total>0?done*100/total:0)%;background:var(--teal-light)"></div></div>
+            @foreach(var it in cl.Items){
+              <div class="cl-item @(it.IsCompleted?"completed":"")" id="cli-@it.Id">
+                <input type="checkbox" @(it.IsCompleted?"checked":"") onchange="toggleCheckItem(@it.Id)" />
+                <span class="cli-text">@it.Title</span>
+                <button class="cli-delete-btn" onclick="deleteCheckItem(@it.Id)" title="حذف"><i class="fas fa-times"></i></button>
+              </div>
+            }
+            <div class="inline-form mt-1">
+              <input type="text" class="new-cli-input" id="newCli-@cl.Id" placeholder="آیتم جدید..." />
+              <button onclick="addChecklistItem(@cl.Id)" class="btn-sm btn-primary"><i class="fas fa-plus"></i></button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Timer -->
+      <div class="card-section-box">
+        <div class="section-header"><h3><i class="fas fa-stopwatch"></i> تایمر</h3></div>
+        <div class="timer-display"><span id="timerValue">00:00:00</span></div>
+        @if(activeTimer!=null){
+          <button class="btn-danger timer-btn" id="timerBtn" onclick="stopTimer(@Model.Id)" data-running="true" data-start="@activeTimer.StartTime.ToString("o")"><i class="fas fa-stop"></i> توقف تایمر</button>
+        } else {
+          <button class="btn-success timer-btn" id="timerBtn" onclick="startTimer(@Model.Id)" data-running="false"><i class="fas fa-play"></i> شروع تایمر</button>
+        }
+        @{ var byUser=Model.TimeLogs.Where(t=>!t.IsRunning).GroupBy(t=>t.User?.Name??t.UserId).Select(g=>new{Name=g.Key,Secs=g.Sum(x=>x.DurationSeconds)}); }
+        @if(byUser.Any()){
+          <div class="time-summary">
+            @foreach(var t in byUser){<div class="time-row"><span>@t.Name</span><span class="time-val">@Fmt(t.Secs)</span></div>}
+          </div>
+        }
+      </div>
+
+      <!-- Assignees -->
+      <div class="card-section-box">
+        <div class="section-header"><h3><i class="fas fa-user-tag"></i> اختصاص به</h3></div>
+        <div class="assignees-list">
+          @foreach(var a in Model.Assignees){
+            <div class="assignee-chip">
+              <div class="avatar-sm">@(a.User?.Name[0])</div>
+              <span>@a.User?.Name</span>
+              @if(canEdit){<button onclick="unassignUser(@Model.Id,'@a.UserId')" class="chip-remove"><i class="fas fa-times"></i></button>}
+            </div>
+          }
+        </div>
+        @if(canEdit && members!=null){
+          <select onchange="assignUser(@Model.Id,this.value);this.value='';" class="form-select" style="margin-top:8px">
+            <option value="">+ افزودن عضو...</option>
+            @foreach(var m in members){<option value="@m.UserId">@m.User?.Name</option>}
+          </select>
+        }
+      </div>
+    </div>
+
+    <!-- COMMENTS: full width below -->
+    <div class="card-comments-section">
+      <h3><i class="fas fa-comments"></i> کامنت‌ها</h3>
+
+      <div id="commentsContainer">
+        @foreach(var comment in Model.Comments.Where(c=>c.ParentCommentId==null).OrderBy(c=>c.CreatedAt)){
+          <div class="comment-item" id="comment-@comment.Id">
+            <div class="comment-avatar">@(comment.Author?.Name[0])</div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <span class="comment-author">@comment.Author?.Name</span>
+                <span class="comment-time">@ToShTime(comment.CreatedAt)</span>
+                <div class="comment-actions">
+                  @if(comment.AuthorId==uid){
+                    <button class="comment-action-btn" onclick="startEditComment(@comment.Id)" title="ویرایش"><i class="fas fa-pen"></i></button>
+                  }
+                  @if(comment.AuthorId==uid||isSM){
+                    <button class="comment-action-btn danger" onclick="deleteComment(@comment.Id)" title="حذف"><i class="fas fa-trash"></i></button>
+                  }
+                </div>
+              </div>
+              <div class="comment-text" id="commentText-@comment.Id">@comment.Content</div>
+              <!-- Edit inline form -->
+              <div id="editCommentForm-@comment.Id" style="display:none" class="edit-comment-form">
+                <textarea id="editCommentText-@comment.Id" rows="2">@comment.Content</textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button onclick="saveCommentEdit(@comment.Id)" class="btn-sm btn-primary">ذخیره</button>
+                  <button onclick="cancelCommentEdit(@comment.Id)" class="btn-sm">لغو</button>
+                </div>
+              </div>
+              @foreach(var att in comment.Attachments){
+                if(att.FileType=="image"){<div class="comment-attachment"><img src="@att.FilePath" class="comment-img" /></div>}
+                else if(att.FileType=="pdf"){<div class="comment-attachment"><a href="@att.FilePath" target="_blank" class="attachment-link"><i class="fas fa-file-pdf"></i> @att.FileName</a></div>}
+                else if(att.FileType=="link"){<div class="comment-attachment"><a href="@att.LinkUrl" target="_blank" class="attachment-link"><i class="fas fa-external-link-alt"></i> @att.LinkUrl</a></div>}
+              }
+              <div class="reactions-bar">
+                @foreach(var emoji in emojis){ var cnt=comment.Reactions.Count(r=>r.Emoji==emoji);
+                  <button class="react-btn @(cnt>0?"active":"")" data-reaction="@comment.Id-@emoji" onclick="reactToComment(@comment.Id,'@emoji')">@emoji <span class="react-count">@(cnt>0?cnt.ToString():"")</span></button>
+                }
+                <button class="reply-btn" onclick="toggleReplyForm(@comment.Id)"><i class="fas fa-reply"></i> پاسخ</button>
+              </div>
+              @foreach(var reply in comment.Replies.OrderBy(r=>r.CreatedAt)){
+                <div class="comment-reply">
+                  <div class="comment-avatar sm">@(reply.Author?.Name[0])</div>
+                  <div class="comment-body">
+                    <div class="comment-header">
+                      <span class="comment-author">@reply.Author?.Name</span>
+                      <span class="comment-time">@ToShTime(reply.CreatedAt)</span>
+                      <div class="comment-actions">
+                        @if(reply.AuthorId==uid){<button class="comment-action-btn" onclick="startEditComment(@reply.Id)" title="ویرایش"><i class="fas fa-pen"></i></button>}
+                        @if(reply.AuthorId==uid||isSM){<button class="comment-action-btn danger" onclick="deleteComment(@reply.Id)" title="حذف"><i class="fas fa-trash"></i></button>}
+                      </div>
+                    </div>
+                    <div class="comment-text" id="commentText-@reply.Id">@reply.Content</div>
+                    <div id="editCommentForm-@reply.Id" style="display:none" class="edit-comment-form">
+                      <textarea id="editCommentText-@reply.Id" rows="2">@reply.Content</textarea>
+                      <div style="display:flex;gap:6px;margin-top:6px">
+                        <button onclick="saveCommentEdit(@reply.Id)" class="btn-sm btn-primary">ذخیره</button>
+                        <button onclick="cancelCommentEdit(@reply.Id)" class="btn-sm">لغو</button>
+                      </div>
+                    </div>
+                    <div class="reactions-bar">
+                      @foreach(var emoji in emojis){ var rc=reply.Reactions.Count(r=>r.Emoji==emoji);
+                        <button class="react-btn @(rc>0?"active":"")" data-reaction="@reply.Id-@emoji" onclick="reactToComment(@reply.Id,'@emoji')">@emoji <span class="react-count">@(rc>0?rc.ToString():"")</span></button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+              <div id="replyForm-@comment.Id" style="display:none" class="reply-form">
+                <textarea id="replyText-@comment.Id" rows="2" placeholder="پاسخ..."></textarea>
+                <div class="reply-actions">
+                  <button onclick="submitReply(@Model.Id,@comment.Id)" class="btn-primary btn-sm">ارسال</button>
+                  <button onclick="toggleReplyForm(@comment.Id)" class="btn-sm">لغو</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- New comment form -->
+      <div class="new-comment-box">
+        <div class="form-group"><textarea id="newCommentText" rows="3" placeholder="کامنت بنویسید..."></textarea></div>
+        <div class="comment-attachments-row">
+          <label class="attach-btn" title="تصویر"><i class="fas fa-image"></i><input type="file" id="commentImage" accept="image/*" style="display:none" /></label>
+          <label class="attach-btn" title="PDF"><i class="fas fa-file-pdf"></i><input type="file" id="commentPdf" accept=".pdf" style="display:none" /></label>
+          <button class="attach-btn" onclick="toggleLinkInput()" title="لینک"><i class="fas fa-link"></i></button>
+          <input type="url" id="commentLink" placeholder="https://..." style="display:none;flex:1" />
+        </div>
+        <button onclick="submitComment(@Model.Id,null)" class="btn-primary" style="width:100%;margin-top:8px"><i class="fas fa-paper-plane"></i> ارسال کامنت</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleAddChecklist(){ const f=document.getElementById('addChecklistForm'); f.style.display=f.style.display==='none'?'block':'none'; if(f.style.display!=='none') document.getElementById('newChecklistName').focus(); }
+async function addChecklist(cardId){ const name=document.getElementById('newChecklistName').value.trim(); if(!name)return; await fetch('/Card/AddCheckList',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId,name})}); location.reload(); }
+async function addChecklistItem(clId){ const input=document.getElementById(`newCli-${clId}`); const title=input?.value.trim(); if(!title)return; await fetch('/Card/AddCheckListItem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({checkListId:clId,title})}); location.reload(); }
+async function toggleCheckItem(itemId){ const r=await fetch('/Card/ToggleCheckListItem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})}); if(r.ok){ const d=await r.json(); const el=document.getElementById(`cli-${itemId}`); el.classList.toggle('completed',d.isCompleted); } }
+async function deleteChecklist(clId){ if(!confirm('این چک‌لیست و تمام آیتم‌هایش حذف شود؟'))return; await fetch('/Card/DeleteCheckList',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({checkListId:clId})}); document.querySelector(`[data-cl-id="${clId}"]`)?.remove(); }
+async function deleteCheckItem(itemId){ if(!confirm('حذف شود؟'))return; await fetch('/Card/DeleteCheckListItem',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId})}); document.getElementById(`cli-${itemId}`)?.remove(); }
+// ── Jalali datepicker init ─────────────────────────────
+(function initJalaliPickers(){
+  ['editDeadline','editStartedAt'].forEach(function(id){
+    const el=document.getElementById(id);
+    if(!el) return;
+    const gval=el.dataset.gregorian;
+    if(gval){
+      // show jalali of existing value
+      try{
+        const pd=new persianDate(new Date(gval));
+        el.value=pd.format('jYYYY/jMM/jDD');
+      }catch(e){}
+    }
+    $(el).persianDatepicker({
+      format:'YYYY/MM/DD',
+      initialValue:false,
+      onSelect:function(unix){
+        el.dataset.gregorianSelected=new Date(unix).toISOString().split('T')[0];
+      }
+    });
+  });
+})();
+
+function jalaliInputToGregorian(id){
+  const el=document.getElementById(id);
+  if(!el) return '';
+  if(el.dataset.gregorianSelected) return el.dataset.gregorianSelected;
+  if(el.dataset.gregorian) return el.dataset.gregorian;
+  return '';
+}
+
+function toggleEditCard(){ const f=document.getElementById('editCardForm'); f.style.display=f.style.display==='none'?'block':'none'; }
+async function saveCardEdit(cardId){
+  const title=document.getElementById('editTitle').value;
+  const desc=document.getElementById('editDesc').value;
+  const color=document.getElementById('editColor').value;
+  const deadline=jalaliInputToGregorian('editDeadline');
+  const startedAt=jalaliInputToGregorian('editStartedAt');
+  const taskTypeId=parseInt(document.getElementById('editTaskType')?.value||'0');
+  await fetch('/Card/Update?id='+cardId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title,description:desc,color,deadline,startedAt})});
+  if(taskTypeId>0||document.getElementById('editTaskType')){
+    await fetch('/Report/SetCardTaskType',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cardId,taskTypeId,startedAt:startedAt||null})});
+  }
+  document.getElementById('cardTitleDisplay').textContent=title;
+  document.getElementById('editCardForm').style.display='none';
+  location.reload();
+}
+async function assignUser(cardId,userId){ if(!userId)return; await fetch('/Card/Assign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId,userId})}); location.reload(); }
+async function unassignUser(cardId,userId){ await fetch('/Card/Unassign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId,userId})}); location.reload(); }
+async function submitComment(cardId,parentId){
+  const text=document.getElementById('newCommentText').value.trim(); if(!text)return;
+  const fd=new FormData(); fd.append('cardId',cardId); fd.append('content',text); if(parentId)fd.append('parentId',parentId);
+  const img=document.getElementById('commentImage')?.files[0], pdf=document.getElementById('commentPdf')?.files[0], link=document.getElementById('commentLink')?.value;
+  if(img)fd.append('attachment',img); else if(pdf)fd.append('attachment',pdf); else if(link)fd.append('linkUrl',link);
+  await fetch('/Card/AddComment',{method:'POST',body:fd}); location.reload();
+}
+function toggleLinkInput(){ const l=document.getElementById('commentLink'); l.style.display=l.style.display==='none'?'inline-block':'none'; if(l.style.display!=='none')l.focus(); }
+function toggleReplyForm(id){ const f=document.getElementById(`replyForm-${id}`); f.style.display=f.style.display==='none'?'flex':'none'; if(f.style.display!=='none')document.getElementById(`replyText-${id}`).focus(); }
+async function submitReply(cardId,parentId){ const text=document.getElementById(`replyText-${parentId}`).value.trim(); if(!text)return; const fd=new FormData(); fd.append('cardId',cardId); fd.append('content',text); fd.append('parentId',parentId); await fetch('/Card/AddComment',{method:'POST',body:fd}); location.reload(); }
+async function deleteComment(commentId){ if(!confirm('کامنت حذف شود؟'))return; const r=await fetch('/Card/DeleteComment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commentId})}); if(r.ok) document.getElementById(`comment-${commentId}`)?.remove(); }
+function startEditComment(commentId){ document.getElementById(`commentText-${commentId}`).style.display='none'; document.getElementById(`editCommentForm-${commentId}`).style.display='block'; document.getElementById(`editCommentText-${commentId}`).focus(); }
+function cancelCommentEdit(commentId){ document.getElementById(`commentText-${commentId}`).style.display='block'; document.getElementById(`editCommentForm-${commentId}`).style.display='none'; }
+async function saveCommentEdit(commentId){ const content=document.getElementById(`editCommentText-${commentId}`).value.trim(); if(!content)return; await fetch('/Card/UpdateComment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commentId,content})}); document.getElementById(`commentText-${commentId}`).textContent=content; cancelCommentEdit(commentId); }
+async function reactToComment(commentId,emoji){ const r=await fetch('/Card/ReactToComment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({commentId,emoji})}); if(r.ok){ const d=await r.json(); const btn=document.querySelector(`[data-reaction="${commentId}-${emoji}"]`); if(btn){btn.querySelector('.react-count').textContent=d.count||''; btn.classList.toggle('active',!d.removed);} } }
+let timerInterval=null;
+function initCardTimers(){ const btn=document.getElementById('timerBtn'); if(!btn)return; if(btn.dataset.running==='true'){ const start=new Date(btn.dataset.start); timerInterval=setInterval(()=>{ document.getElementById('timerValue').textContent=formatTime(Math.floor((Date.now()-start)/1000)); },1000); } }
+async function startTimer(cardId){ const r=await fetch('/Card/StartTimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})}); if(r.ok){ const d=await r.json(); const btn=document.getElementById('timerBtn'); btn.innerHTML='<i class="fas fa-stop"></i> توقف تایمر'; btn.className='btn-danger timer-btn'; btn.setAttribute('onclick',`stopTimer(${cardId})`); btn.dataset.running='true'; const start=new Date(d.startTime); timerInterval=setInterval(()=>{ document.getElementById('timerValue').textContent=formatTime(Math.floor((Date.now()-start)/1000)); },1000); } }
+async function stopTimer(cardId){ const r=await fetch('/Card/StopTimer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})}); if(r.ok){ clearInterval(timerInterval); location.reload(); } }
+function formatTime(s){ return `${Math.floor(s/3600).toString().padStart(2,'0')}:${Math.floor((s%3600)/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`; }
+initCardTimers();
+if(typeof archiveCardFromBoard==='undefined'){
+  window.archiveCardFromBoard=async function(cardId){
+    if(!confirm('کارت آرشیو شود؟ بعداً می‌توانید آن را از بخش آرشیو بازگردانید.'))return;
+    const r=await fetch('/Card/ArchiveCard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})});
+    if(r.ok){
+      document.querySelector(`[data-card-id="${cardId}"]`)?.remove();
+      if(typeof closeCard==='function')closeCard();
+      if(typeof showToast==='function')showToast('کارت آرشیو شد 📦');
+      else alert('کارت آرشیو شد');
+    }else{alert('خطا در آرشیو کارت');}
+  };
+}
+</script>

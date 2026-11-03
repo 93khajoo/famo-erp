@@ -1,0 +1,24 @@
+@{ ViewData["Title"]="ثبت‌نام"; var ru=ViewData["ReturnUrl"]?.ToString()??"/"; }
+<div class="login-page"><div class="login-box">
+<img src="~/images/logo.png" alt="FAMO" class="login-logo" onerror="this.style.display='none'" />
+<h2>ثبت‌نام در فامو برد</h2>
+<div id="regError" class="login-error" style="display:none"></div>
+<div class="form-group"><label>نام نمایشی</label><input type="text" id="displayName" /></div>
+<div class="form-group"><label>نام کاربری</label><input type="text" id="regUsername" /></div>
+<div class="form-group"><label>رمز عبور</label><input type="password" id="regPassword" /></div>
+<div class="form-group"><label>تکرار رمز عبور</label><input type="password" id="regConfirm" onkeydown="if(event.key==='Enter')doRegister()" /></div>
+<button class="btn-auth" onclick="doRegister()"><i class="fas fa-user-plus"></i> ثبت‌نام</button>
+<p class="auth-switch">حساب دارید؟ <a href="/Account/Login">وارد شوید</a></p>
+</div></div>
+<script>
+const RETURN_URL="@Html.Raw(ru)";
+async function doRegister(){
+  const dn=document.getElementById('displayName').value.trim(), u=document.getElementById('regUsername').value.trim(), p=document.getElementById('regPassword').value, c=document.getElementById('regConfirm').value;
+  if(!u||!p){showErr('نام کاربری و رمز الزامی است');return;}
+  if(p!==c){showErr('رمز و تکرار آن یکسان نیستند');return;}
+  const r=await fetch('/Account/Register',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`displayName=${encodeURIComponent(dn)}&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&confirmPassword=${encodeURIComponent(c)}&returnUrl=${encodeURIComponent(RETURN_URL)}`});
+  const d=await r.json();
+  if(d.success) window.location.href=d.returnUrl||'/'; else showErr(d.message);
+}
+function showErr(m){ const e=document.getElementById('regError'); e.textContent=m; e.style.display='block'; }
+</script>

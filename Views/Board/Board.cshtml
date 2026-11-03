@@ -1,0 +1,618 @@
+@model FamoBoard.Models.Project
+@{ ViewData["Title"]=Model.Name; bool isSM=ViewBag.IsScrumMaster; string uid=ViewBag.UserId; }
+<div class="board-page" data-project-id="@Model.Id">
+  <div class="board-header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="/" class="btn-back"><i class="fas fa-arrow-right"></i></a>
+      <h1 class="board-title" id="projectTitleDisplay">@Model.Name</h1>
+      @if(isSM){<span class="badge-scrum"><i class="fas fa-crown"></i> اسکرام مستر</span>}
+      @if(isSM){<button class="btn-icon btn-icon-sm" onclick="openModal('editProjectModal')" title="ویرایش پروژه"><i class="fas fa-pen"></i></button>}
+    </div>
+    <div style="display:flex;gap:8px">
+      <a href="/Report/Index?projectId=@Model.Id" class="btn-icon" title="گزارش"><i class="fas fa-chart-bar"></i></a>
+      <a href="/Card/ArchivedCards?projectId=@Model.Id" class="btn-icon" title="آرشیو کارت‌ها" style="color:#6A1B9A"><i class="fas fa-archive"></i></a>
+      @if(isSM){
+        <button class="btn-icon" onclick="openModal('membersModal')"><i class="fas fa-users"></i></button>
+        <button class="btn-icon" onclick="generateInvite()"><i class="fas fa-link"></i></button>
+        <button class="btn-icon btn-icon-danger" onclick="confirmDeleteProject()" title="حذف پروژه"><i class="fas fa-trash"></i></button>
+      }
+    </div>
+  </div>
+  <!-- Search & Filter Bar -->
+  <div class="board-filter-bar">
+    <div class="bfb-search">
+      <i class="fas fa-search"></i>
+      <input type="text" id="cardSearch" placeholder="جستجو در کارت‌ها..." oninput="filterCards()" />
+    </div>
+    <div class="bfb-filters">
+      <select id="sortCards" onchange="filterCards()">
+        <option value="default">مرتب‌سازی پیش‌فرض</option>
+        <option value="title_asc">الفبا (الف تا ی)</option>
+        <option value="title_desc">الفبا (ی تا الف)</option>
+        <option value="created_asc">تاریخ افزودن (قدیم‌ترین)</option>
+        <option value="created_desc">تاریخ افزودن (جدیدترین)</option>
+        <option value="deadline_asc">ددلاین (نزدیک‌ترین)</option>
+        <option value="deadline_desc">ددلاین (دورترین)</option>
+        <option value="started_asc">شروع کار (قدیم‌ترین)</option>
+      </select>
+      <select id="filterAssignee" onchange="filterCards()">
+        <option value="">همه اعضا</option>
+        @foreach(var m in Model.Members){
+          <option value="@m.UserId">@m.User?.Name</option>
+        }
+      </select>
+      <button class="bfb-clear" onclick="clearFilters()" title="حذف فیلتر"><i class="fas fa-times"></i></button>
+    </div>
+  </div>
+  <div class="board-canvas">
+    @foreach(var list in Model.Lists.OrderBy(l=>l.Order)){
+      <div class="board-list" data-list-id="@list.Id" ondragover="event.preventDefault()" ondrop="dropCard(event,@list.Id)">
+        <div class="list-header">
+          <span class="list-name" id="listName-@list.Id">@list.Name</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="list-count">@list.Cards.Count</span>
+            @if(isSM){
+              <button class="list-action-btn" onclick="event.stopPropagation();openEditList(@list.Id,'@list.Name')" title="ویرایش"><i class="fas fa-pen"></i></button>
+              <button class="list-action-btn danger" onclick="event.stopPropagation();confirmDeleteList(@list.Id,'@list.Name')" title="حذف"><i class="fas fa-trash"></i></button>
+            }
+          </div>
+        </div>
+        <div class="cards-container" id="list-@list.Id">
+          @foreach(var card in list.Cards){
+            var overdue = card.Deadline.HasValue && card.Deadline.Value < DateTime.UtcNow;
+            <div class="card-item" draggable="true" data-card-id="@card.Id"
+                 data-title="@card.Title.ToLower()"
+                 data-assignees="@string.Join(",", card.Assignees.Select(a=>a.UserId))"
+                 data-created="@card.CreatedAt.Ticks"
+                 data-deadline="@(card.Deadline?.Ticks ?? 0)"
+                 data-started="@(card.StartedAt?.Ticks ?? 0)"
+                 ondragstart="dragStart(event,@card.Id)" onclick="openCard(@card.Id)" style="border-right:4px solid @card.Color">
+              <div style="width:8px;height:8px;border-radius:50%;background:@card.Color;margin-bottom:6px"></div>
+              <div class="card-title">@card.Title</div>
+              @if(!string.IsNullOrEmpty(card.Description)){<div class="card-desc">@card.Description</div>}
+              <div class="card-footer">
+                @if(card.Deadline.HasValue){<span class="card-deadline @(overdue?"overdue":"")" data-iso="@card.Deadline.Value.ToString("yyyy-MM-ddTHH:mm:ssZ")">⏰ ...</span>}
+                <div style="display:flex">
+                  @foreach(var a in card.Assignees.Take(3)){<div class="avatar-mini">@(a.User?.Name[0])</div>}
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+        <button class="btn-add-card" onclick="openAddCard(@list.Id)"><i class="fas fa-plus"></i> افزودن کارت</button>
+      </div>
+    }
+    <div style="min-width:200px;flex-shrink:0"><button class="btn-add-list" onclick="openModal('addListModal')"><i class="fas fa-plus"></i> افزودن لیست</button></div>
+  </div>
+</div>
+
+<div id="cardOverlay" class="card-overlay" style="display:none">
+  <div class="card-overlay-backdrop" onclick="closeCard()"></div>
+  <div id="cardDetail" class="card-detail-panel"></div>
+</div>
+
+<div id="addCardModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>افزودن کارت</h3><button onclick="closeModal('addCardModal')"><i class="fas fa-times"></i></button></div>
+    <div class="form-group"><label>عنوان</label><input type="text" id="newCardTitle" /></div>
+    <div class="form-group"><label>توضیحات</label><input type="text" id="newCardDesc" /></div>
+    <div class="form-group">
+      <label>نوع تسک <span style="color:#E53935">*</span></label>
+      <select id="newCardTaskType" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-family:inherit;font-size:.9rem;background:#fff;color:var(--dark);cursor:pointer;outline:none">
+        <option value="">— انتخاب نوع تسک —</option>
+        @foreach(var tt in (ViewBag.TaskTypes as List<FamoBoard.Models.TaskType> ?? new())){
+          <option value="@tt.Id">@tt.Name (@tt.Rate.ToString("N0") ت)</option>
+        }
+      </select>
+      <div id="taskTypeRequired" style="display:none;color:#E53935;font-size:.78rem;margin-top:4px">انتخاب نوع تسک الزامی است</div>
+    </div>
+    <div class="form-group">
+      <label>پروژه مشتری</label>
+      <select id="newCardClientProject" onchange="onClientProjectChange(this)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-family:inherit;font-size:.9rem;background:#fff;color:var(--dark);cursor:pointer;outline:none">
+        <option value="" data-color="#4DB6AC">— بدون پروژه مشتری —</option>
+        @foreach(var cp in (ViewBag.ClientProjects as List<FamoBoard.Models.ClientProject> ?? new())){
+          <option value="@cp.Id" data-color="@cp.Color">@cp.Name</option>
+        }
+      </select>
+      <div id="newCardColorPreview" style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--mid)">
+        <span id="newCardColorDot" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#4DB6AC;flex-shrink:0"></span>
+        <span id="newCardColorLabel">رنگ پیش‌فرض</span>
+      </div>
+      <input type="hidden" id="newCardColor" value="#4DB6AC" />
+    </div>
+    <div class="modal-footer"><button onclick="closeModal('addCardModal')" class="btn-secondary">انصراف</button><button onclick="submitAddCard()" class="btn-primary">افزودن</button></div>
+  </div>
+</div>
+
+<div id="addListModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>افزودن لیست</h3><button onclick="closeModal('addListModal')"><i class="fas fa-times"></i></button></div>
+    <div class="form-group"><label>نام لیست</label><input type="text" id="newListName" /></div>
+    <div class="modal-footer"><button onclick="closeModal('addListModal')" class="btn-secondary">انصراف</button><button onclick="submitAddList()" class="btn-primary">افزودن</button></div>
+  </div>
+</div>
+
+@if(isSM){
+<div id="editProjectModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>ویرایش پروژه</h3><button onclick="closeModal('editProjectModal')"><i class="fas fa-times"></i></button></div>
+    <div class="form-group"><label>نام پروژه</label><input type="text" id="editProjectName" value="@Model.Name" /></div>
+    <div class="form-group"><label>توضیحات</label><textarea id="editProjectDesc" rows="3">@Model.Description</textarea></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('editProjectModal')" class="btn-secondary">انصراف</button>
+      <button onclick="saveProjectEdit()" class="btn-primary"><i class="fas fa-save"></i> ذخیره</button>
+    </div>
+  </div>
+</div>
+
+<div id="editListModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>ویرایش لیست</h3><button onclick="closeModal('editListModal')"><i class="fas fa-times"></i></button></div>
+    <div class="form-group"><label>نام لیست</label><input type="text" id="editListName" /></div>
+    <input type="hidden" id="editListId" />
+    <div class="modal-footer">
+      <button onclick="closeModal('editListModal')" class="btn-secondary">انصراف</button>
+      <button onclick="saveListEdit()" class="btn-primary"><i class="fas fa-save"></i> ذخیره</button>
+    </div>
+  </div>
+</div>
+}
+<div id="membersModal" class="modal-overlay" style="display:none">
+  <div class="modal-box modal-wide">
+    <div class="modal-header"><h3>مدیریت تیم</h3><button onclick="closeModal('membersModal')"><i class="fas fa-times"></i></button></div>
+    <!-- Tabs -->
+    <div class="member-modal-tabs">
+      <button class="mmt active" onclick="switchMMTab('members',this)"><i class="fas fa-users"></i> اعضا و نرخ</button>
+      <button class="mmt" onclick="switchMMTab('tasktypes',this)"><i class="fas fa-tags"></i> مدل‌های تسک</button>
+      <button class="mmt" onclick="switchMMTab('clientprojects',this)"><i class="fas fa-briefcase"></i> پروژه‌های مشتری</button>
+      <button class="mmt" onclick="switchMMTab('invite',this)"><i class="fas fa-user-plus"></i> دعوت</button>
+    </div>
+
+    <!-- Tab: Members & Rates -->
+    <div id="mmtMembers" class="mmt-content">
+      <div class="members-list">
+        @foreach(var m in Model.Members){
+          <div class="member-row" data-member-id="@m.UserId">
+            <div class="member-avatar">@(m.User?.Name[0])</div>
+            <div style="flex:1"><span class="member-name">@m.User?.Name</span><span class="member-email">@m.User?.Email</span></div>
+            <div class="member-rates">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <input type="number" placeholder="نرخ ساعتی (تومان)" class="rate-input" value="@m.HourlyRate" id="hourly-@m.UserId" />
+                <input type="number" placeholder="نرخ پیش‌فرض تسک (تومان)" class="rate-input" value="@m.TaskRate" id="task-@m.UserId" />
+              </div>
+              <button class="au-btn edit" style="align-self:center" onclick="setRate('@m.UserId')"><i class="fas fa-save"></i></button>
+            </div>
+            @if(m.UserId != Model.ScrumMasterId){<button class="btn-danger-sm" onclick="removeMember('@m.UserId')"><i class="fas fa-user-minus"></i></button>}
+            else{<span style="color:var(--orange)"><i class="fas fa-crown"></i></span>}
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Tab: Task Types -->
+    <div id="mmtTasktypes" class="mmt-content" style="display:none">
+      <div id="taskTypeList">
+        @foreach(var tt in (ViewBag.TaskTypes as List<FamoBoard.Models.TaskType> ?? new())){
+          <div class="tt-row" id="tt-@tt.Id">
+            <span class="tt-name">@tt.Name</span>
+            <span class="tt-rate">@tt.Rate.ToString("N0") تومان</span>
+            <button class="au-btn edit" onclick="editTaskType(@tt.Id,'@tt.Name',@tt.Rate)"><i class="fas fa-pen"></i></button>
+            <button class="au-btn delete" onclick="deleteTaskType(@tt.Id)"><i class="fas fa-trash"></i></button>
+          </div>
+        }
+      </div>
+      <div class="tt-add-form">
+        <input type="hidden" id="ttEditId" value="0" />
+        <input type="text" id="ttName" placeholder="نام مدل (مثلاً: مدل ۱)" />
+        <input type="number" id="ttRate" placeholder="نرخ (تومان)" />
+        <button class="btn-primary" onclick="saveTaskType()"><i class="fas fa-plus"></i> افزودن / ذخیره</button>
+        <button class="btn-secondary" onclick="resetTaskTypeForm()">انصراف</button>
+      </div>
+    </div>
+
+    <!-- Tab: Client Projects -->
+    <div id="mmtClientprojects" class="mmt-content" style="display:none">
+      <div id="clientProjectList">
+        @foreach(var cp in (ViewBag.ClientProjects as List<FamoBoard.Models.ClientProject> ?? new())){
+          <div class="tt-row" id="cp-@cp.Id">
+            <span class="cp-color-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:@cp.Color;flex-shrink:0;margin-left:6px"></span>
+            <span class="tt-name">@cp.Name</span>
+            <button class="au-btn edit" onclick="editClientProject(@cp.Id,'@cp.Name','@cp.Color')"><i class="fas fa-pen"></i></button>
+            <button class="au-btn delete" onclick="deleteClientProject(@cp.Id)"><i class="fas fa-trash"></i></button>
+          </div>
+        }
+      </div>
+      <div class="tt-add-form" style="flex-wrap:wrap;gap:8px">
+        <input type="hidden" id="cpEditId" value="0" />
+        <input type="text" id="cpName" placeholder="نام پروژه مشتری (مثلاً: پرنسس)" style="flex:1;min-width:140px" />
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="color" id="cpColor" value="#4DB6AC" style="width:36px;height:36px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;padding:2px;background:#fff" title="رنگ پروژه" />
+          <span style="font-size:.75rem;color:var(--mid)">رنگ</span>
+        </div>
+        <button class="btn-primary" onclick="saveClientProject()"><i class="fas fa-plus"></i> افزودن / ذخیره</button>
+        <button class="btn-secondary" onclick="resetClientProjectForm()">انصراف</button>
+      </div>
+    </div>
+
+    <!-- Tab: Invite -->
+    <div id="mmtInvite" class="mmt-content" style="display:none">
+      <div class="invite-section" style="padding-top:0;border:none">
+        <h4 style="margin-bottom:12px">دعوت اعضای جدید</h4>
+        <div class="invite-row"><input type="email" id="inviteEmail" placeholder="ایمیل" /><button onclick="sendInvite()" class="btn-primary">ارسال</button></div>
+        <div id="inviteLinkArea" class="invite-link-area" style="display:none"><input type="text" id="inviteLinkInput" readonly /><button onclick="copyLink()"><i class="fas fa-copy"></i></button></div>
+      </div>
+    </div>
+  </div>
+</div>
+}
+
+@section Scripts {
+<script>
+// ══════════════════════════════════════════════════════════
+//  GLOBALS  (تعریف یکبار — بدون تکرار const)
+// ══════════════════════════════════════════════════════════
+const PROJECT_ID   = @Model.Id;
+const CURRENT_UID  = '@uid';
+const CURRENT_NAME = '@Html.Raw((ViewBag.CurrentUserName ?? "").ToString().Replace("'","\\\'"))';
+
+let currentListId = null;
+
+// ── Jalali helper ─────────────────────────────────────────
+function toJalali(dateStr){
+  if(!dateStr) return '';
+  try{
+    const d = new persianDate(new Date(dateStr));
+    return d.format('jYYYY/jMM/jDD');
+  } catch(e){ return dateStr; }
+}
+function toJalaliTime(dateStr){
+  if(!dateStr) return '';
+  try{
+    const d = new persianDate(new Date(dateStr));
+    return d.format('HH:mm');
+  } catch(e){ return ''; }
+}
+
+// ── SignalR board ─────────────────────────────────────────
+const boardConn = new signalR.HubConnectionBuilder().withUrl("/boardHub").build();
+boardConn.start().then(()=>boardConn.invoke("JoinBoard",String(PROJECT_ID)));
+boardConn.on("CardMoved",(cardId,toListId)=>{
+  const c=document.querySelector(`[data-card-id="${cardId}"]`);
+  const t=document.getElementById(`list-${toListId}`);
+  if(c&&t)t.appendChild(c);
+});
+
+// ── Add card ──────────────────────────────────────────────
+function openAddCard(listId){
+  currentListId=listId;
+  document.getElementById('newCardTitle').value='';
+  document.getElementById('newCardDesc').value='';
+  document.getElementById('newCardTaskType').value='';
+  document.getElementById('newCardTaskType').style.borderColor='';
+  document.getElementById('taskTypeRequired').style.display='none';
+  document.getElementById('newCardClientProject').value='';
+  document.getElementById('newCardColor').value='#4DB6AC';
+  document.getElementById('newCardColorDot').style.background='#4DB6AC';
+  document.getElementById('newCardColorLabel').textContent='رنگ پیش‌فرض';
+  openModal('addCardModal');
+  document.getElementById('newCardTitle').focus();
+}
+async function submitAddCard(){
+  const title=document.getElementById('newCardTitle').value.trim();
+  if(!title)return;
+  const taskTypeId=parseInt(document.getElementById('newCardTaskType').value)||0;
+  const clientProjectId=parseInt(document.getElementById('newCardClientProject').value)||0;
+  const reqEl=document.getElementById('taskTypeRequired');
+  if(!taskTypeId){ reqEl.style.display='block'; document.getElementById('newCardTaskType').style.borderColor='#E53935'; return; }
+  reqEl.style.display='none'; document.getElementById('newCardTaskType').style.borderColor='';
+  const res=await fetch('/Card/Create',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({listId:currentListId,title,
+      description:document.getElementById('newCardDesc').value,
+      color:document.getElementById('newCardColor').value,
+      taskTypeId, clientProjectId})});
+  if(res.ok){ closeModal('addCardModal'); location.reload(); }
+  else showToast('خطا در افزودن کارت');
+}
+
+// ── Add list ──────────────────────────────────────────────
+async function submitAddList(){
+  const name=document.getElementById('newListName').value.trim();
+  if(!name)return;
+  await fetch(`/Board/AddList?projectId=${PROJECT_ID}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  closeModal('addListModal'); location.reload();
+}
+
+// ── Card detail ───────────────────────────────────────────
+async function openCard(cardId){
+  const res=await fetch(`/Card/Details/${cardId}`);
+  if(res.ok){
+    const html=await res.text();
+    const c=document.getElementById('cardDetail');
+    c.innerHTML=html;
+    document.getElementById('cardOverlay').style.display='flex';
+    c.querySelectorAll('script').forEach(old=>{
+      const s=document.createElement('script');
+      s.textContent=old.textContent;
+      old.parentNode.replaceChild(s,old);
+    });
+  }
+}
+function closeCard(){ document.getElementById('cardOverlay').style.display='none'; }
+
+// ── Drag & drop ───────────────────────────────────────────
+function dragStart(e,id){ e.dataTransfer.setData('cardId',id); }
+async function dropCard(e,listId){
+  e.preventDefault();
+  const cardId=e.dataTransfer.getData('cardId');
+  await fetch('/Card/Move',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cardId:parseInt(cardId),toListId:listId})});
+  const c=document.querySelector(`[data-card-id="${cardId}"]`);
+  const t=document.getElementById(`list-${listId}`);
+  if(c&&t)t.appendChild(c);
+  boardConn.invoke("CardMoved",String(PROJECT_ID),parseInt(cardId),listId);
+}
+
+// ── Color from ClientProject ──────────────────────────────
+const CP_PALETTE=['#4DB6AC','#E07B39','#457B9D','#7B5EA7','#E53935','#2E7D32','#F57C00','#00838F','#6D4C41','#546E7A'];
+function onClientProjectChange(sel){
+  const opt=sel.options[sel.selectedIndex];
+  const color=opt.dataset.color||'#4DB6AC';
+  const name=sel.value?opt.textContent.trim():'رنگ پیش‌فرض';
+  document.getElementById('newCardColor').value=color;
+  document.getElementById('newCardColorDot').style.background=color;
+  document.getElementById('newCardColorLabel').textContent=name;
+}
+
+// ── Invite ────────────────────────────────────────────────
+async function generateInvite(){
+  const res=await fetch(`/Board/GenerateInvite?projectId=${PROJECT_ID}`,{method:'POST'});
+  const d=await res.json();
+  const a=document.getElementById('inviteLinkArea');
+  if(a){a.style.display='flex';document.getElementById('inviteLinkInput').value=d.link;}
+  else showToast(d.link);
+}
+async function sendInvite(){
+  const email=document.getElementById('inviteEmail').value;
+  if(!email)return;
+  const res=await fetch(`/Board/SendInvite?projectId=${PROJECT_ID}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+  const d=await res.json();
+  const a=document.getElementById('inviteLinkArea');
+  if(a){a.style.display='flex';document.getElementById('inviteLinkInput').value=d.link;}
+  showToast(d.hasAccount?'اعلان داخلی ارسال شد':'لینک دعوت آماده شد');
+}
+function copyLink(){ navigator.clipboard.writeText(document.getElementById('inviteLinkInput').value); showToast('کپی شد'); }
+
+// ── Members ───────────────────────────────────────────────
+async function removeMember(id){
+  if(!confirm('حذف شود؟'))return;
+  await fetch(`/Board/RemoveMember?projectId=${PROJECT_ID}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({memberId:id})});
+  document.querySelector(`[data-member-id="${id}"]`)?.remove();
+}
+async function setRate(id){
+  const h=document.getElementById(`hourly-${id}`)?.value||null;
+  const t=document.getElementById(`task-${id}`)?.value||null;
+  const r=await fetch(`/Board/SetMemberRate?projectId=${PROJECT_ID}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({memberId:id,hourlyRate:h?parseFloat(h):null,taskRate:t?parseFloat(t):null})});
+  if(r.ok) showToast('نرخ ذخیره شد ✓'); else showToast('خطا در ذخیره‌سازی');
+}
+
+// ── Members modal tabs ────────────────────────────────────
+function switchMMTab(name,btn){
+  document.querySelectorAll('.mmt-content').forEach(el=>el.style.display='none');
+  document.querySelectorAll('.mmt').forEach(el=>el.classList.remove('active'));
+  document.getElementById('mmt'+name.charAt(0).toUpperCase()+name.slice(1)).style.display='block';
+  btn.classList.add('active');
+}
+
+// ── Task Types ────────────────────────────────────────────
+function editTaskType(id,name,rate){
+  document.getElementById('ttEditId').value=id;
+  document.getElementById('ttName').value=name;
+  document.getElementById('ttRate').value=rate;
+}
+function resetTaskTypeForm(){
+  document.getElementById('ttEditId').value='0';
+  document.getElementById('ttName').value='';
+  document.getElementById('ttRate').value='';
+}
+async function saveTaskType(){
+  const id=parseInt(document.getElementById('ttEditId').value)||0;
+  const name=document.getElementById('ttName').value.trim();
+  const rate=parseFloat(document.getElementById('ttRate').value)||0;
+  if(!name||!rate){showToast('نام و نرخ را وارد کنید');return;}
+  const r=await fetch('/Report/SaveTaskType',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id,projectId:PROJECT_ID,name,rate})});
+  const d=await r.json();
+  if(d.success){
+    if(id>0){
+      const row=document.getElementById(`tt-${id}`);
+      if(row){row.querySelector('.tt-name').textContent=name;row.querySelector('.tt-rate').textContent=rate.toLocaleString()+' تومان';}
+    } else {
+      const list=document.getElementById('taskTypeList');
+      const div=document.createElement('div');
+      div.className='tt-row';div.id=`tt-${d.id}`;
+      div.innerHTML=`<span class="tt-name">${name}</span><span class="tt-rate">${rate.toLocaleString()} تومان</span>
+        <button class="au-btn edit" onclick="editTaskType(${d.id},'${name}',${rate})"><i class="fas fa-pen"></i></button>
+        <button class="au-btn delete" onclick="deleteTaskType(${d.id})"><i class="fas fa-trash"></i></button>`;
+      list.appendChild(div);
+    }
+    resetTaskTypeForm();showToast('مدل تسک ذخیره شد ✓');
+  }
+}
+async function deleteTaskType(id){
+  if(!confirm('حذف شود؟'))return;
+  await fetch('/Report/DeleteTaskType',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId:id})});
+  document.getElementById(`tt-${id}`)?.remove();
+  showToast('مدل حذف شد');
+}
+
+// ── Client Projects ──────────────────────────────────────
+function editClientProject(id,name,color){
+  document.getElementById('cpEditId').value=id;
+  document.getElementById('cpName').value=name;
+  document.getElementById('cpColor').value=color||'#4DB6AC';
+}
+function resetClientProjectForm(){
+  document.getElementById('cpEditId').value='0';
+  document.getElementById('cpName').value='';
+  document.getElementById('cpColor').value='#4DB6AC';
+}
+async function saveClientProject(){
+  const id=parseInt(document.getElementById('cpEditId').value)||0;
+  const name=document.getElementById('cpName').value.trim();
+  const color=document.getElementById('cpColor').value||'#4DB6AC';
+  if(!name){showToast('نام پروژه را وارد کنید');return;}
+  const r=await fetch('/Report/SaveClientProject',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id,projectId:PROJECT_ID,name,color})});
+  const d=await r.json();
+  if(d.success){
+    if(id>0){
+      const row=document.getElementById(`cp-${id}`);
+      if(row){
+        row.querySelector('.tt-name').textContent=name;
+        const dot=row.querySelector('.cp-color-dot');
+        if(dot) dot.style.background=color;
+      }
+    } else {
+      const list=document.getElementById('clientProjectList');
+      const div=document.createElement('div');
+      div.className='tt-row';div.id=`cp-${d.id}`;
+      div.innerHTML=`<span class="cp-color-dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;margin-left:6px"></span>
+        <span class="tt-name">${name}</span>
+        <button class="au-btn edit" onclick="editClientProject(${d.id},'${name.replace(/'/g,"\\'")}','${color}')"><i class="fas fa-pen"></i></button>
+        <button class="au-btn delete" onclick="deleteClientProject(${d.id})"><i class="fas fa-trash"></i></button>`;
+      list.appendChild(div);
+    }
+    // اگر dropdown افزودن کارت باز باشه، option رو هم آپدیت کن
+    const sel=document.getElementById('newCardClientProject');
+    if(sel){
+      const opt=sel.querySelector(`option[value="${d.id}"]`);
+      if(opt){opt.textContent=name;opt.dataset.color=color;}
+      else{const o=document.createElement('option');o.value=d.id;o.dataset.color=color;o.textContent=name;sel.appendChild(o);}
+    }
+    resetClientProjectForm();showToast('پروژه مشتری ذخیره شد ✓');
+  }
+}
+async function deleteClientProject(id){
+  if(!confirm('حذف شود؟'))return;
+  await fetch('/Report/DeleteClientProject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId:id})});
+  document.getElementById(`cp-${id}`)?.remove();
+  showToast('پروژه حذف شد');
+}
+
+// ── Search & Filter ───────────────────────────────────────
+function filterCards(){
+  const q=document.getElementById('cardSearch').value.trim().toLowerCase();
+  const sort=document.getElementById('sortCards').value;
+  const assignee=document.getElementById('filterAssignee').value;
+  document.querySelectorAll('.board-list').forEach(list=>{
+    const container=list.querySelector('.cards-container');
+    if(!container)return;
+    const cards=[...container.querySelectorAll('.card-item')];
+    cards.forEach(c=>{
+      const matchQ=!q||c.dataset.title.includes(q);
+      const matchA=!assignee||(c.dataset.assignees||'').split(',').includes(assignee);
+      c.style.display=matchQ&&matchA?'':'none';
+    });
+    if(sort!=='default'){
+      const visible=cards.filter(c=>c.style.display!=='none');
+      visible.sort((a,b)=>{
+        if(sort==='title_asc') return a.dataset.title.localeCompare(b.dataset.title,'fa');
+        if(sort==='title_desc') return b.dataset.title.localeCompare(a.dataset.title,'fa');
+        if(sort==='created_asc') return parseInt(a.dataset.created)-parseInt(b.dataset.created);
+        if(sort==='created_desc') return parseInt(b.dataset.created)-parseInt(a.dataset.created);
+        if(sort==='deadline_asc'){const da=parseInt(a.dataset.deadline)||Infinity,db=parseInt(b.dataset.deadline)||Infinity;return da-db;}
+        if(sort==='deadline_desc'){const da=parseInt(a.dataset.deadline)||0,db=parseInt(b.dataset.deadline)||0;return db-da;}
+        if(sort==='started_asc') return parseInt(a.dataset.started)-parseInt(b.dataset.started);
+        return 0;
+      });
+      visible.forEach(c=>container.appendChild(c));
+    }
+  });
+}
+function clearFilters(){
+  document.getElementById('cardSearch').value='';
+  document.getElementById('sortCards').value='default';
+  document.getElementById('filterAssignee').value='';
+  filterCards();
+}
+
+// ── Toast ─────────────────────────────────────────────────
+function showToast(msg){
+  const t=document.createElement('div');t.className='toast-simple';t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),3000);
+}
+
+// ── Project edit/delete ───────────────────────────────────
+async function saveProjectEdit(){
+  const name=document.getElementById('editProjectName').value.trim();
+  const desc=document.getElementById('editProjectDesc').value.trim();
+  if(!name)return;
+  await fetch(`/Board/UpdateProject?projectId=${PROJECT_ID}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:desc})});
+  document.getElementById('projectTitleDisplay').textContent=name;
+  document.title=name+' - فامو برد';
+  closeModal('editProjectModal');
+  showToast('پروژه به‌روز شد ✓');
+}
+async function confirmDeleteProject(){
+  if(!confirm(`آیا پروژه "${document.getElementById('projectTitleDisplay').textContent}" حذف شود؟\nاین عمل برگشت‌ناپذیر است.`))return;
+  const r=await fetch(`/Board/DeleteProject?projectId=${PROJECT_ID}`,{method:'POST'});
+  if(r.ok) window.location.href='/';
+}
+
+// ── List edit/delete ──────────────────────────────────────
+function openEditList(listId,listName){
+  document.getElementById('editListId').value=listId;
+  document.getElementById('editListName').value=listName;
+  openModal('editListModal');
+  document.getElementById('editListName').focus();
+}
+async function saveListEdit(){
+  const listId=document.getElementById('editListId').value;
+  const name=document.getElementById('editListName').value.trim();
+  if(!name)return;
+  await fetch(`/Board/UpdateList?listId=${listId}`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  document.getElementById(`listName-${listId}`).textContent=name;
+  closeModal('editListModal');
+  showToast('لیست به‌روز شد ✓');
+}
+async function confirmDeleteList(listId,listName){
+  if(!confirm(`لیست "${listName}" و همه کارت‌های آن حذف شوند؟`))return;
+  await fetch(`/Board/DeleteList?listId=${listId}`,{method:'POST'});
+  document.querySelector(`[data-list-id="${listId}"]`)?.remove();
+  showToast('لیست حذف شد');
+}
+
+// ── Card delete ───────────────────────────────────────────
+async function deleteCardFromBoard(cardId){
+  if(!confirm('کارت حذف شود؟'))return;
+  const r=await fetch('/Card/DeleteCard',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})});
+  if(r.ok){document.querySelector(`[data-card-id="${cardId}"]`)?.remove();closeCard();showToast('کارت حذف شد');}
+}
+async function archiveCardFromBoard(cardId){
+  if(!confirm('کارت آرشیو شود؟ بعداً می‌توانید آن را از بخش آرشیو بازگردانید.'))return;
+  const r=await fetch('/Card/ArchiveCard',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})});
+  if(r.ok){
+    document.querySelector(`[data-card-id="${cardId}"]`)?.remove();
+    closeCard();
+    showToast('کارت آرشیو شد 📦');
+  } else { alert('خطا در آرشیو کارت'); }
+}
+
+// ── Init on DOM ready ─────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+  // Render Jalali dates on card deadlines
+  document.querySelectorAll('.card-deadline[data-iso]').forEach(el=>{
+    el.textContent='⏰ '+toJalali(el.dataset.iso);
+  });
+});
+</script>
+}

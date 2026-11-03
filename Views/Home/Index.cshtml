@@ -1,0 +1,80 @@
+@model List<FamoBoard.Models.Project>
+@{
+    ViewData["Title"] = "پروژه‌های من";
+    var _pc = new System.Globalization.PersianCalendar();
+    string ToSh(DateTime d) => $"{_pc.GetYear(d)}/{_pc.GetMonth(d):D2}/{_pc.GetDayOfMonth(d):D2}";
+}
+<div class="projects-page">
+  <div class="projects-header">
+    <h1><i class="fas fa-th-large"></i> پروژه‌های من</h1>
+    <button class="btn-primary" onclick="openModal('createProjectModal')"><i class="fas fa-plus"></i> پروژه جدید</button>
+  </div>
+  <div class="projects-grid">
+    @foreach (var p in Model)
+    {
+      <div class="project-card-wrapper">
+        <a href="/Board/Board/@p.Id" class="project-card">
+          <div style="display:flex;gap:14px;margin-bottom:16px">
+            <div class="project-icon"><i class="fas fa-project-diagram"></i></div>
+            <div><h3>@p.Name</h3><p style="color:var(--mid);font-size:.85rem">@p.Description</p></div>
+          </div>
+          <div class="project-card-footer"><span>@ToSh(p.CreatedAt)</span><span class="open-board">باز کردن <i class="fas fa-arrow-left"></i></span></div>
+        </a>
+        <div class="project-card-actions">
+          <button class="proj-action-btn" onclick="openEditProject(@p.Id,'@p.Name.Replace("'","\\'")', '@(p.Description?.Replace("'","\\'")??"" )')" title="ویرایش"><i class="fas fa-pen"></i></button>
+          <button class="proj-action-btn danger" onclick="deleteProject(@p.Id,'@p.Name.Replace("'","\\'")')" title="حذف"><i class="fas fa-trash"></i></button>
+        </div>
+      </div>
+    }
+    @if (!Model.Any())
+    { <div class="empty-state"><i class="fas fa-clipboard-list"></i><p>هنوز پروژه‌ای ندارید.</p></div> }
+  </div>
+</div>
+<div id="createProjectModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h2>پروژه جدید</h2><button onclick="closeModal('createProjectModal')"><i class="fas fa-times"></i></button></div>
+    <form method="post" asp-action="CreateProject">
+      <div class="form-group"><label>نام پروژه</label><input type="text" name="name" required /></div>
+      <div class="form-group"><label>توضیحات</label><textarea name="description" rows="3"></textarea></div>
+      <div class="modal-footer"><button type="button" onclick="closeModal('createProjectModal')" class="btn-secondary">انصراف</button><button type="submit" class="btn-primary">ساخت</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="editProjectModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>ویرایش پروژه</h3><button onclick="closeModal('editProjectModal')"><i class="fas fa-times"></i></button></div>
+    <input type="hidden" id="editProjId" />
+    <div class="form-group"><label>نام پروژه</label><input type="text" id="editProjName" /></div>
+    <div class="form-group"><label>توضیحات</label><textarea id="editProjDesc" rows="3"></textarea></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('editProjectModal')" class="btn-secondary">انصراف</button>
+      <button onclick="saveProjectEdit()" class="btn-primary"><i class="fas fa-save"></i> ذخیره</button>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+function openEditProject(id, name, desc) {
+  document.getElementById('editProjId').value = id;
+  document.getElementById('editProjName').value = name;
+  document.getElementById('editProjDesc').value = desc;
+  openModal('editProjectModal');
+}
+async function saveProjectEdit() {
+  const id = document.getElementById('editProjId').value;
+  const name = document.getElementById('editProjName').value.trim();
+  const desc = document.getElementById('editProjDesc').value.trim();
+  if (!name) return;
+  await fetch(`/Board/UpdateProject?projectId=${id}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:desc})});
+  closeModal('editProjectModal');
+  location.reload();
+}
+async function deleteProject(id, name) {
+  if (!confirm(`پروژه "${name}" حذف شود؟\nاین عمل برگشت‌ناپذیر است.`)) return;
+  const r = await fetch(`/Board/DeleteProject?projectId=${id}`, {method:'POST'});
+  if (r.ok) location.reload();
+}
+</script>
+}

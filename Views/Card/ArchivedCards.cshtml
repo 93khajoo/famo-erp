@@ -1,0 +1,136 @@
+@model List<FamoBoard.Models.Card>
+@using System.Globalization
+@{
+    ViewData["Title"] = "آرشیو کارت‌ها";
+    int projectId = ViewBag.ProjectId;
+    string projectName = ViewBag.ProjectName;
+    var pc = new PersianCalendar();
+}
+<style>
+  body{background:#F5F0FF;font-family:Vazirmatn,sans-serif;direction:rtl}
+  .arch-page{max-width:900px;margin:32px auto;padding:0 16px}
+  .arch-header{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+  .arch-header h1{font-size:1.4rem;font-weight:700;color:#4A148C;margin:0;display:flex;align-items:center;gap:8px}
+  .back-btn{display:flex;align-items:center;gap:6px;padding:8px 16px;background:#fff;color:#6A1B9A;border:1px solid #CE93D8;border-radius:8px;text-decoration:none;font-size:.9rem;transition:.2s;white-space:nowrap}
+  .back-btn:hover{background:#F3E5F5}
+  .arch-count{background:#6A1B9A;color:#fff;border-radius:20px;padding:3px 12px;font-size:.85rem}
+  .proj-name{margin-right:auto;color:#757575;font-size:.9rem}
+  .search-box{width:100%;padding:10px 14px;border:1px solid #ddd;border-radius:10px;font-size:.95rem;margin-bottom:20px;direction:rtl;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .arch-grid{display:flex;flex-direction:column;gap:10px}
+  .arch-card{background:#fff;border:1px solid #EDE7F6;border-radius:12px;padding:14px 18px;display:flex;align-items:center;gap:14px;transition:.2s}
+  .arch-card:hover{box-shadow:0 4px 16px rgba(106,27,154,.12);border-color:#CE93D8}
+  .color-bar{width:4px;border-radius:4px;align-self:stretch;min-height:44px;flex-shrink:0}
+  .card-body{flex:1;min-width:0}
+  .card-title{font-weight:600;color:#212121;font-size:.95rem;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:.78rem;color:#757575}
+  .meta-tag{background:#F5F0FF;border-radius:6px;padding:2px 8px;display:flex;align-items:center;gap:4px}
+  .card-actions{flex-shrink:0}
+  .btn-unarchive{padding:7px 14px;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:8px;cursor:pointer;font-size:.82rem;transition:.2s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .btn-unarchive:hover{background:#C8E6C9}
+  .btn-unarchive:disabled{opacity:.5;cursor:not-allowed}
+  .empty-state{text-align:center;padding:64px 16px;color:#9E9E9E;background:#fff;border-radius:16px;border:1px dashed #CE93D8}
+  .empty-state i{font-size:3rem;margin-bottom:12px;display:block;color:#CE93D8}
+  .empty-state p{font-size:1rem}
+</style>
+
+<div class="arch-page">
+  <div class="arch-header">
+    <a href="/Board/Board/@projectId" class="back-btn"><i class="fas fa-arrow-right"></i> برگشت به بورد</a>
+    <h1><i class="fas fa-archive"></i> آرشیو کارت‌ها</h1>
+    <span class="arch-count" id="countBadge">@Model.Count کارت</span>
+    <span class="proj-name">@projectName</span>
+  </div>
+
+  <input type="text" class="search-box" id="searchInput"
+         placeholder="🔍 جستجو در کارت‌های آرشیو شده..."
+         oninput="filterCards()">
+
+  <div class="arch-grid" id="archGrid">
+    @if (!Model.Any())
+    {
+      <div class="empty-state" id="emptyState">
+        <i class="fas fa-box-open"></i>
+        <p>هیچ کارت آرشیو شده‌ای وجود ندارد</p>
+      </div>
+    }
+    else
+    {
+      foreach (var card in Model)
+      {
+        var archivedDate = card.ArchivedAt.HasValue
+            ? $"{pc.GetYear(card.ArchivedAt.Value.ToLocalTime())}/{pc.GetMonth(card.ArchivedAt.Value.ToLocalTime()):D2}/{pc.GetDayOfMonth(card.ArchivedAt.Value.ToLocalTime()):D2}"
+            : "";
+        <div class="arch-card" data-id="@card.Id" data-title="@card.Title.ToLower()">
+          <div class="color-bar" style="background:@card.Color"></div>
+          <div class="card-body">
+            <div class="card-title">@card.Title</div>
+            <div class="card-meta">
+              @if (card.BoardList != null)
+              {<span class="meta-tag"><i class="fas fa-list fa-xs"></i> @card.BoardList.Name</span>}
+              @if (card.TaskType != null)
+              {<span class="meta-tag"><i class="fas fa-tag fa-xs"></i> @card.TaskType.Name</span>}
+              @if (card.Assignees.Any())
+              {<span class="meta-tag"><i class="fas fa-user fa-xs"></i> @string.Join("، ", card.Assignees.Select(a => a.User?.DisplayName ?? a.User?.UserName ?? ""))</span>}
+              @if (!string.IsNullOrEmpty(archivedDate))
+              {<span class="meta-tag"><i class="fas fa-calendar-times fa-xs"></i> @archivedDate</span>}
+            </div>
+          </div>
+          <div class="card-actions">
+            <button class="btn-unarchive" onclick="unarchiveCard(@card.Id, this)">
+              <i class="fas fa-undo"></i> بازگردانی
+            </button>
+          </div>
+        </div>
+      }
+    }
+  </div>
+</div>
+
+<script>
+function filterCards(){
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('.arch-card').forEach(c => {
+    c.style.display = c.dataset.title.includes(q) ? '' : 'none';
+  });
+}
+
+async function unarchiveCard(cardId, btn){
+  if(!confirm('کارت به بورد بازگردانده شود؟')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+  try {
+    const r = await fetch('/Card/UnarchiveCard', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cardId})
+    });
+    if(r.ok){
+      const cardEl = document.querySelector(`.arch-card[data-id="${cardId}"]`);
+      cardEl.style.transition = 'all .3s';
+      cardEl.style.opacity = '0';
+      cardEl.style.transform = 'translateX(20px)';
+      setTimeout(() => {
+        cardEl.remove();
+        const remaining = document.querySelectorAll('.arch-card').length;
+        document.getElementById('countBadge').textContent = remaining + ' کارت';
+        if(remaining === 0){
+          document.getElementById('archGrid').innerHTML = `
+            <div class="empty-state">
+              <i class="fas fa-box-open"></i>
+              <p>هیچ کارت آرشیو شده‌ای وجود ندارد</p>
+            </div>`;
+        }
+      }, 300);
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-undo"></i> بازگردانی';
+      alert('خطا در بازگردانی کارت');
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-undo"></i> بازگردانی';
+    alert('خطا در ارتباط با سرور');
+  }
+}
+</script>

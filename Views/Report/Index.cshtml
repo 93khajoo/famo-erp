@@ -1,0 +1,1165 @@
+@using FamoBoard.Services
+@using FamoBoard.Controllers
+@model ReportViewModel
+@{
+    ViewData["Title"] = "گزارشات";
+    int projectId = ViewBag.ProjectId;
+    string projectName = ViewBag.ProjectName;
+    string fromVal = ViewBag.From ?? "";
+    string toVal = ViewBag.To ?? "";
+    string activeTab = ViewBag.Tab ?? "summary";
+    bool unsettledOnly = ViewBag.UnsettledOnly ?? true;
+
+    var pc = new System.Globalization.PersianCalendar();
+    string ToShamsi(DateTime dt) => $"{pc.GetYear(dt)}/{pc.GetMonth(dt):D2}/{pc.GetDayOfMonth(dt):D2}";
+    string Fmt(long s) { var h=s/3600; var m=(s%3600)/60; var sec=s%60; return $"{h:D2}:{m:D2}:{sec:D2}"; }
+
+    var dailyJson     = System.Text.Json.JsonSerializer.Serialize(Model.Summary.DailyTrend.Select(d => new { date = ToShamsi(d.Date), secs = d.TotalSeconds }));
+    var userNamesJson = System.Text.Json.JsonSerializer.Serialize(Model.UserReport.Select(u => u.UserName).ToList());
+    var userSecsJson  = System.Text.Json.JsonSerializer.Serialize(Model.UserReport.Select(u => u.TotalSeconds).ToList());
+    var cardNamesJson = System.Text.Json.JsonSerializer.Serialize(Model.CardReport.Take(10).Select(c => c.CardTitle.Length>18?c.CardTitle[..18]+"…":c.CardTitle).ToList());
+    var cardSecsJson  = System.Text.Json.JsonSerializer.Serialize(Model.CardReport.Take(10).Select(c => c.TotalSeconds).ToList());
+    bool isSM = ViewBag.IsScrumMaster ?? false;
+    var cpListForContracts = ViewBag.ClientProjectsForReport as List<FamoBoard.Models.ClientProject> ?? new List<FamoBoard.Models.ClientProject>();
+    var salNamesJson  = System.Text.Json.JsonSerializer.Serialize(Model.SalaryReport.Select(s => s.UserName).ToList());
+    var salValsJson   = System.Text.Json.JsonSerializer.Serialize(Model.SalaryReport.Select(s => (double)s.TotalSalary).ToList());
+    var userDailyJson = System.Text.Json.JsonSerializer.Serialize(
+        Model.UserReport.Select(u => new {
+            id = u.UserId.Replace("-","_"),
+            json = System.Text.Json.JsonSerializer.Serialize(u.DailyBreakdown.Select(d => new { date=ToShamsi(d.Date), secs=d.TotalSeconds }))
+        }).ToList());
+}
+
+<link rel="stylesheet" href="~/css/report.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css" />
+
+<div class="report-page">
+  <div class="report-header">
+    <a href="/Board/Board/@projectId" class="btn-back"><i class="fas fa-arrow-right"></i> بازگشت</a>
+    <div><h1><i class="fas fa-chart-bar"></i> گزارشات — @projectName</h1></div>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" action="/Report/Index" class="report-filter-bar" id="reportForm">
+    <input type="hidden" name="projectId" value="@projectId" />
+    <input type="hidden" name="tab" id="tabInput" value="@activeTab" />
+    <input type="hidden" name="unsettledOnly" id="unsettledOnlyInput" value="@unsettledOnly.ToString().ToLower()" />
+    <div class="filter-group">
+      <label><i class="fas fa-calendar"></i> از تاریخ (شمسی)</label>
+      <input type="text" name="from" id="fromDate" value="@fromVal" placeholder="۱۴۰۳/۰۱/۰۱" class="jalali-input" readonly />
+    </div>
+    <div class="filter-group">
+      <label><i class="fas fa-calendar"></i> تا تاریخ (شمسی)</label>
+      <input type="text" name="to" id="toDate" value="@toVal" placeholder="۱۴۰۳/۱۲/۲۹" class="jalali-input" readonly />
+    </div>
+    <button type="submit" class="btn-primary"><i class="fas fa-filter"></i> اعمال</button>
+    <a href="/Report/Index?projectId=@projectId" class="btn-secondary">حذف فیلتر</a>
+    <div class="quick-date-btns">
+      <button type="button" onclick="setRange(7)">۷ روز</button>
+      <button type="button" onclick="setRange(30)">۳۰ روز</button>
+      <button type="button" onclick="setRange(90)">۳ ماه</button>
+      <button type="button" onclick="setThisMonth()">این ماه</button>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
+      <input type="checkbox" id="unsettledCheck" @(unsettledOnly?"checked":"") onchange="toggleUnsettled(this)" />
+      فقط تسفیه‌نشده
+    </label>
+  </form>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card teal"><div class="kpi-icon"><i class="fas fa-clock"></i></div><div class="kpi-value">@Fmt(Model.Summary.TotalSeconds)</div><div class="kpi-label">مجموع زمان کار</div></div>
+    <div class="kpi-card orange"><div class="kpi-icon"><i class="fas fa-tasks"></i></div><div class="kpi-value">@Model.Summary.TotalCards</div><div class="kpi-label">تعداد کل تسک‌ها</div></div>
+    <div class="kpi-card blue"><div class="kpi-icon"><i class="fas fa-users"></i></div><div class="kpi-value">@Model.Summary.ActiveMembers</div><div class="kpi-label">نفرات فعال</div></div>
+    <div class="kpi-card green"><div class="kpi-icon"><i class="fas fa-money-bill-wave"></i></div><div class="kpi-value">@Model.SalaryReport.Sum(s=>s.TotalSalary).ToString("N0")</div><div class="kpi-label">خالص حقوق (تومان)</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="report-tabs">
+    <button class="rtab @(activeTab=="summary"?"active":"")" onclick="showTab('summary')"><i class="fas fa-home"></i> خلاصه</button>
+    <button class="rtab @(activeTab=="users"?"active":"")" onclick="showTab('users')"><i class="fas fa-user-clock"></i> زمان نفرات</button>
+    <button class="rtab @(activeTab=="cards"?"active":"")" onclick="showTab('cards')"><i class="fas fa-th-list"></i> تسک‌ها</button>
+    <button class="rtab @(activeTab=="salary"?"active":"")" onclick="showTab('salary')"><i class="fas fa-money-bill-wave"></i> حقوق</button>
+    @if(isSM){
+    <button class="rtab @(activeTab=="videos"?"active":"")" onclick="showTab('videos')"><i class="fas fa-video"></i> ویدئوها</button>
+    <button class="rtab @(activeTab=="contracts"?"active":"")" onclick="showTab('contracts');loadContracts()"><i class="fas fa-file-contract"></i> قراردادها</button>
+    }
+  </div>
+
+  <!-- TAB: SUMMARY -->
+  <div id="tab-summary" class="rtab-content @(activeTab!="summary"?"d-none":"")">
+    <div class="charts-grid">
+      <div class="chart-card wide"><h3><i class="fas fa-chart-area"></i> روند کار روزانه</h3><canvas id="dailyTrendChart" height="90"></canvas></div>
+      <div class="chart-card"><h3><i class="fas fa-chart-pie"></i> سهم زمانی نفرات</h3><canvas id="userPieChart" height="200"></canvas></div>
+      <div class="chart-card"><h3><i class="fas fa-chart-bar"></i> زمان‌برترین تسک‌ها</h3><canvas id="topCardsChart" height="200"></canvas></div>
+    </div>
+  </div>
+
+  <!-- TAB: USERS -->
+  <div id="tab-users" class="rtab-content @(activeTab!="users"?"d-none":"")">
+    <div class="chart-card" style="margin-bottom:20px"><h3><i class="fas fa-chart-bar"></i> مقایسه زمان کار نفرات</h3><canvas id="userBarChart" height="80"></canvas></div>
+    @foreach(var u in Model.UserReport){ var safeId=u.UserId.Replace("-","_");
+      <div class="user-report-card">
+        <div class="urc-header" onclick="toggleSection('urc-@safeId')">
+          <div class="urc-avatar">@u.UserName[0]</div>
+          <div class="urc-info"><strong>@u.UserName</strong><span>@u.UserEmail</span></div>
+          <div class="urc-stats">
+            <div class="urc-stat"><span class="urc-val teal">@Fmt(u.TotalSeconds)</span><span>مجموع زمان</span></div>
+            <div class="urc-stat"><span class="urc-val orange">@u.Cards.Count</span><span>تسک</span></div>
+          </div>
+          <i class="fas fa-chevron-down urc-chevron"></i>
+        </div>
+        <div id="urc-@safeId" class="urc-body" style="display:none">
+          <div class="urc-mini-chart"><canvas id="mini-@safeId" height="60"></canvas></div>
+          <table class="report-table">
+            <thead><tr><th>عنوان تسک</th><th>توضیحات</th><th>زمان</th><th>درصد</th></tr></thead>
+            <tbody>
+            @foreach(var c in u.Cards.OrderByDescending(x=>x.TotalSeconds)){
+              var pct=u.TotalSeconds>0?Math.Round(c.TotalSeconds*100.0/u.TotalSeconds,1):0;
+              <tr><td>@c.CardTitle</td><td style="color:var(--mid);font-size:.82rem;max-width:200px">@(string.IsNullOrEmpty(c.CardDescription)?"—":c.CardDescription)</td><td><span class="time-badge">@Fmt(c.TotalSeconds)</span></td><td><div class="mini-bar"><div style="width:@pct%"></div></div><small>%@pct</small></td></tr>
+            }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+    @if(!Model.UserReport.Any()){<div class="empty-report"><i class="fas fa-clock"></i><p>در این بازه زمانی داده‌ای ثبت نشده</p></div>}
+  </div>
+
+  <!-- TAB: CARDS -->
+  <div id="tab-cards" class="rtab-content @(activeTab!="cards"?"d-none":"")">
+    <div class="chart-card" style="margin-bottom:20px"><h3><i class="fas fa-chart-bar"></i> زمان‌برترین تسک‌ها</h3><canvas id="cardBarChart" height="100"></canvas></div>
+    <div class="report-table-wrap">
+      <table class="report-table">
+        <thead><tr><th>تسک</th><th>توضیحات</th><th>لیست</th><th>مجموع زمان</th><th>نفرات</th></tr></thead>
+        <tbody>
+        @foreach(var c in Model.CardReport){
+          <tr>
+            <td><strong>@c.CardTitle</strong></td>
+            <td style="color:var(--mid);font-size:.82rem;max-width:180px">@(string.IsNullOrEmpty(c.CardDescription)?"—":c.CardDescription)</td>
+            <td><span class="list-badge">@c.ListName</span></td>
+            <td><span class="time-badge">@Fmt(c.TotalSeconds)</span></td>
+            <td><div class="user-chips">@foreach(var u in c.Users){<div class="user-chip"><span class="chip-av">@u.UserName[0]</span><span class="chip-name">@u.UserName</span><span class="chip-time">@Fmt(u.TotalSeconds)</span></div>}</div></td>
+          </tr>
+        }
+        </tbody>
+      </table>
+    </div>
+    @if(!Model.CardReport.Any()){<div class="empty-report"><i class="fas fa-tasks"></i><p>داده‌ای یافت نشد</p></div>}
+  </div>
+
+  <!-- TAB: SALARY -->
+  <div id="tab-salary" class="rtab-content @(activeTab!="salary"?"d-none":"")">
+    <div class="chart-card" style="margin-bottom:20px"><h3><i class="fas fa-chart-bar"></i> مقایسه حقوق (پس از کسر جریمه)</h3><canvas id="salaryBarChart" height="80"></canvas></div>
+    <div class="penalty-banner"><i class="fas fa-exclamation-triangle"></i> به ازای هر روز تأخیر از ددلاین، <strong>۵٪</strong> از حقوق ناخالص کسر می‌شود (سقف: ۱۰۰٪).</div>
+    <div class="report-table-wrap">
+      <table class="report-table salary-table">
+        <thead>
+          <tr><th>نام</th><th>ساعت</th><th>تسک</th><th>ح.ساعتی</th><th>ح.تسکی</th><th>ناخالص</th><th>تأخیر</th><th>جریمه</th><th>خالص</th>@if(isSM){<th>دستمزد اضافه</th><th>قابل پرداخت</th>}<th>عملیات</th></tr>
+        </thead>
+        <tbody>
+        @foreach(var s in Model.SalaryReport){
+          var rowId = s.UserId.Replace("-","_");
+          <tr class="@(s.OverdueCardCount>0?"has-penalty-row":"")" onclick="@(s.OverdueCardCount>0||s.CardDetails.Any()?$"toggleSection('det-{rowId}')":"")" style="@(s.OverdueCardCount>0||s.CardDetails.Any()?"cursor:pointer":"")">
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="avatar-sm">@s.UserName[0]</div>
+                <div><div style="font-weight:600">@s.UserName</div>
+                  @if(s.LastSettlementDate.HasValue){<div style="font-size:.72rem;color:var(--orange)">آخرین تصفیه: @ToShamsi(s.LastSettlementDate.Value)</div>}
+                </div>
+              </div>
+            </td>
+            <td><span class="time-badge">@s.TotalHours h</span></td>
+            <td>@s.TotalCards</td>
+            <td>@(s.SalaryFromHours>0?s.SalaryFromHours.ToString("N0")+" ت":"—")</td>
+            <td>@(s.SalaryFromTasks>0?s.SalaryFromTasks.ToString("N0")+" ت":"—")</td>
+            <td><strong>@s.GrossSalary.ToString("N0") ت</strong></td>
+            <td>@if(s.OverdueCardCount>0){<span class="overdue-badge">@s.OverdueCardCount کارت <i class="fas fa-chevron-down" style="font-size:.7rem"></i></span>}else{<span class="ontime-badge"><i class="fas fa-check"></i></span>}</td>
+            <td>@if(s.PenaltyAmount>0){<span class="penalty-badge">−@s.PenaltyPercent.ToString("N0")٪</span>}else{<text>—</text>}</td>
+            <td>@if(s.TotalSalary>0){<span class="salary-badge">@s.TotalSalary.ToString("N0") ت</span>}else{<span style="color:var(--mid)">—</span>}</td>
+            @if(isSM){
+            <td>
+              @if(s.PendingWageAdjustment != 0){
+                <span class="salary-badge" style="background:#E8F5E9;color:#2E7D32">+@s.PendingWageAdjustment.ToString("N0") ت</span>
+              }else{<span style="color:var(--mid)">—</span>}
+              <button class="au-btn edit" style="margin-right:4px" onclick="event.stopPropagation();openWageAdj('@s.UserId','@s.UserName')" title="افزودن دستمزد">
+                <i class="fas fa-plus-circle"></i>
+              </button>
+            </td>
+            <td>
+              @if(s.FinalPending>0){<span class="salary-badge" style="background:#FFF3E0;color:#E65100">@s.FinalPending.ToString("N0") ت</span>}else{<span style="color:var(--mid)">—</span>}
+            </td>
+            }
+            <td onclick="event.stopPropagation()">
+              <button class="au-btn edit" onclick="openSettlement('@s.UserId','@s.UserName')" title="ثبت تصفیه">
+                <i class="fas fa-handshake"></i> تصفیه
+              </button>
+            </td>
+          </tr>
+          <tr id="det-@rowId" style="display:none">
+            <td colspan="@(isSM?"12":"10")">
+              <div class="penalty-detail-box">
+                <!-- Card breakdown -->
+                @if(s.CardDetails.Any()){
+                  <strong style="font-size:.85rem;display:block;margin-bottom:10px">جزئیات تسک‌ها — @s.UserName</strong>
+                  <table class="report-table" style="margin-bottom:16px">
+                    <thead><tr><th>عنوان تسک</th><th>توضیحات</th><th>پروژه مشتری</th><th>مدل</th><th>نرخ</th><th>ایجاد</th><th>شروع</th><th>ددلاین</th></tr></thead>
+                    <tbody>
+                    @foreach(var cd in s.CardDetails){
+                      <tr>
+                        <td>@cd.Title</td>
+                        <td style="color:var(--mid);font-size:.82rem;max-width:150px">@(string.IsNullOrEmpty(cd.Description)?"—":cd.Description)</td>
+                        <td><span class="list-badge" style="background:#E3F2FD;color:#1565C0">@(string.IsNullOrEmpty(cd.ClientProjectName)?"—":cd.ClientProjectName)</span></td>
+                        <td><span class="list-badge">@cd.TaskTypeName</span></td>
+                        <td>@cd.Rate.ToString("N0") ت</td>
+                        <td style="font-size:.8rem">@ToShamsi(cd.CreatedAt)</td>
+                        <td style="font-size:.8rem">@(cd.StartedAt.HasValue?ToShamsi(cd.StartedAt.Value):"—")</td>
+                        <td style="font-size:.8rem">@(cd.Deadline.HasValue?ToShamsi(cd.Deadline.Value):"—")</td>
+                      </tr>
+                    }
+                    </tbody>
+                  </table>
+                }
+                <!-- Overdue cards -->
+                @if(s.OverdueCards.Any()){
+                  <strong style="font-size:.85rem;display:block;margin-bottom:10px;color:#C62828">کارت‌های معوقه</strong>
+                  <table class="report-table">
+                    <thead><tr><th>کارت</th><th>ددلاین</th><th>وضعیت</th><th>تأخیر</th><th>جریمه</th></tr></thead>
+                    <tbody>
+                    @foreach(var oc in s.OverdueCards){
+                      <tr>
+                        <td>@oc.CardTitle</td>
+                        <td>@ToShamsi(oc.Deadline)</td>
+                        <td>@if(oc.IsCompleted){<span class="list-badge" style="background:#E8F5E9;color:#2E7D32">تکمیل (دیرکرد)</span>}else{<span class="list-badge" style="background:#FFEBEE;color:#C62828">معوقه</span>}</td>
+                        <td><strong>@oc.LateDays روز</strong></td>
+                        <td>%@(oc.LateDays*5)</td>
+                      </tr>
+                    }
+                    </tbody>
+                  </table>
+                }
+                <!-- Settlement history -->
+                @if(s.Settlements.Any()){
+                  <strong style="font-size:.85rem;display:block;margin:16px 0 10px">تاریخچه تصفیه‌ها</strong>
+                  <table class="report-table">
+                    <thead><tr><th>تاریخ تصفیه</th><th>مبلغ</th><th>یادداشت</th></tr></thead>
+                    <tbody>
+                    @foreach(var st in s.Settlements){
+                      <tr><td>@ToShamsi(st.SettledAt)</td><td><span class="salary-badge">@st.Amount.ToString("N0") تومان</span></td><td style="color:var(--mid)">@st.Note</td></tr>
+                    }
+                    </tbody>
+                  </table>
+                }
+                <!-- Wage adjustments history -->
+                @if(isSM && s.WageAdjustments.Any()){
+                  <strong style="font-size:.85rem;display:block;margin:16px 0 10px;color:#2E7D32">دستمزد دریافت‌نشده / مبالغ اضافه</strong>
+                  <table class="report-table">
+                    <thead><tr><th>تاریخ ثبت</th><th>مبلغ (تومان)</th><th>توضیح</th><th>حذف</th></tr></thead>
+                    <tbody>
+                    @foreach(var wa in s.WageAdjustments){
+                      <tr>
+                        <td>@ToShamsi(wa.CreatedAt)</td>
+                        <td><span class="salary-badge" style="background:#E8F5E9;color:#2E7D32">@wa.Amount.ToString("N0")</span></td>
+                        <td style="color:var(--mid)">@wa.Note</td>
+                        <td><button class="au-btn danger" style="padding:3px 8px;font-size:.75rem" onclick="deleteWageAdj(@wa.Id)"><i class="fas fa-trash"></i></button></td>
+                      </tr>
+                    }
+                    </tbody>
+                  </table>
+                }
+              </div>
+            </td>
+          </tr>
+        }
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="@(isSM?"9":"9")" style="text-align:left;font-weight:700;padding:12px 14px">جمع کل خالص</td>
+            <td style="padding:12px 14px"><span class="salary-badge total">@Model.SalaryReport.Sum(s=>s.TotalSalary).ToString("N0") ت</span></td>
+            @if(isSM){
+            <td style="padding:12px 14px"><span class="salary-badge" style="background:#E8F5E9;color:#2E7D32">+@Model.SalaryReport.Sum(s=>s.PendingWageAdjustment).ToString("N0") ت</span></td>
+            <td style="padding:12px 14px"><span class="salary-badge" style="background:#FFF3E0;color:#E65100">@Model.SalaryReport.Sum(s=>s.FinalPending).ToString("N0") ت</span></td>
+            <td></td>
+            }
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    @if(Model.Members.Any(m=>!m.HourlyRate.HasValue&&!m.TaskRate.HasValue)){<div class="rate-hint"><i class="fas fa-info-circle"></i> نرخ حقوقی اعضا را از پنل اعضا تعریف کنید.</div>}
+  </div>
+</div>
+
+@if(isSM){
+<div id="tab-videos" class="rtab-content @(activeTab!="videos"?"d-none":"")">
+
+  <style>
+  .vid-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px;background:var(--white);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px}
+  .vid-search-wrap{position:relative;flex:1;min-width:180px}
+  .vid-search-wrap i{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mid);font-size:.85rem;pointer-events:none}
+  #vid-search{width:100%;padding:8px 34px 8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;outline:none;transition:border-color .2s}
+  #vid-search:focus{border-color:var(--teal)}
+  .vid-select{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;background:var(--white);color:var(--dark);outline:none;cursor:pointer;transition:border-color .2s}
+  .vid-select:focus{border-color:var(--teal)}
+  .vid-toggle-filter{display:flex;align-items:center;gap:7px;font-size:.84rem;cursor:pointer;color:var(--mid);white-space:nowrap;padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;transition:all .2s;user-select:none}
+  .vid-toggle-filter:hover{border-color:var(--teal);color:var(--teal)}
+  .vid-toggle-filter input{display:none}
+  .vid-toggle-filter.active{background:var(--teal-pale);border-color:var(--teal);color:var(--teal);font-weight:600}
+  .vid-count-badge{background:var(--teal-pale);color:var(--teal);font-weight:700;font-size:.8rem;padding:4px 12px;border-radius:20px;margin-right:auto;white-space:nowrap}
+
+  .vid-list{display:flex;flex-direction:column;gap:10px}
+  .vid-card{background:var(--white);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;display:flex;align-items:center;gap:16px;transition:box-shadow .2s,border-color .2s}
+  .vid-card:hover{box-shadow:var(--shadow);border-color:var(--teal-light)}
+  .vid-card.is-uploaded{border-right:4px solid #4CAF50}
+  .vid-card.not-uploaded{border-right:4px solid var(--border)}
+
+  .vid-upload-toggle{flex-shrink:0;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid var(--border);background:var(--light);transition:all .2s;position:relative}
+  .vid-upload-toggle:hover{border-color:var(--teal-light);background:var(--teal-pale)}
+  .vid-upload-toggle.done{background:#E8F5E9;border-color:#4CAF50}
+  .vid-upload-toggle i{font-size:1.1rem;color:var(--mid);transition:color .2s}
+  .vid-upload-toggle.done i{color:#388E3C}
+
+  .vid-info{flex:1;min-width:0}
+  .vid-title{font-weight:600;font-size:.95rem;color:var(--dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+  .vid-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .vid-type-badge{font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:20px;background:#EDE7F6;color:#512DA8;white-space:nowrap}
+  .vid-assignee{font-size:.78rem;color:var(--mid)}
+  .vid-date{font-size:.78rem;color:var(--teal);display:flex;align-items:center;gap:4px}
+  .vid-project-name{font-size:.78rem;font-weight:600;color:#7B1FA2;background:#F3E5F5;padding:2px 8px;border-radius:20px;display:flex;align-items:center;gap:4px;white-space:nowrap}
+
+  .vid-stats{display:flex;gap:14px;flex-shrink:0;align-items:center}
+  .vid-stat{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:44px}
+  .vid-stat-val{font-size:.88rem;font-weight:700;color:var(--dark)}
+  .vid-stat-lbl{font-size:.68rem;color:var(--mid)}
+  .vid-stat.empty .vid-stat-val{color:var(--border)}
+
+  .vid-edit-btn{flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:var(--white);color:var(--mid);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+  .vid-edit-btn:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-pale)}
+
+  .vid-loading{text-align:center;padding:60px;color:var(--mid)}
+  .vid-loading i{font-size:1.8rem;color:var(--teal-light)}
+  .vid-empty-state{text-align:center;padding:60px 20px;color:var(--mid)}
+  .vid-empty-state i{font-size:3rem;opacity:.2;margin-bottom:12px;display:block}
+  .vid-empty-state p{font-size:.9rem}
+
+  @@media(max-width:640px){
+    .vid-stats{display:none}
+  }
+  </style>
+
+  <!-- Toolbar -->
+  <div class="vid-toolbar">
+    <div class="vid-search-wrap">
+      <i class="fas fa-search"></i>
+      <input id="vid-search" type="text" placeholder="جستجوی عنوان...">
+    </div>
+    <select id="vid-sort-field" class="vid-select">
+      <option value="">مرتب‌سازی...</option>
+      <option value="views">بازدید</option>
+      <option value="likes">لایک</option>
+      <option value="shares">شیر</option>
+      <option value="reposts">ریپست</option>
+      <option value="skipRate">اسکیپ ریت</option>
+      <option value="scheduledUploadAt">تاریخ آپلود</option>
+    </select>
+    <select id="vid-sort-dir" class="vid-select">
+      <option value="desc">↓ زیاد به کم</option>
+      <option value="asc">↑ کم به زیاد</option>
+    </select>
+    <label class="vid-toggle-filter" id="vid-filter-label">
+      <input type="checkbox" id="vid-filter-uploaded">
+      <i class="fas fa-filter"></i> فقط آپلود نشده
+    </label>
+    <span class="vid-count-badge" id="vid-count">0 ویدئو</span>
+  </div>
+
+  <!-- States -->
+  <div class="vid-loading" id="vid-loading" style="display:none">
+    <i class="fas fa-spinner fa-spin"></i>
+    <p style="margin-top:12px;font-size:.88rem">در حال بارگذاری...</p>
+  </div>
+  <div class="vid-empty-state" id="vid-empty" style="display:none">
+    <i class="fas fa-film"></i>
+    <p>کارتی با نوع تسک ویدئو یافت نشد</p>
+  </div>
+
+  <!-- Cards list -->
+  <div class="vid-list" id="vid-tbody"></div>
+
+</div>
+}
+
+<!-- Settlement Modal -->
+<div id="settlementModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3><i class="fas fa-handshake"></i> ثبت تصفیه حساب</h3><button onclick="closeModal('settlementModal')"><i class="fas fa-times"></i></button></div>
+    <p style="color:var(--mid);margin-bottom:16px;font-size:.9rem">تصفیه برای: <strong id="settlementUserName"></strong></p>
+    <input type="hidden" id="settlementUserId" />
+    <div class="form-group">
+      <label>تاریخ تصفیه (شمسی)</label>
+      <input type="text" id="settlementDate" class="jalali-input" placeholder="۱۴۰۳/۰۶/۳۱" readonly />
+    </div>
+    <div class="form-group">
+      <label>مبلغ تصفیه (تومان)</label>
+      <input type="number" id="settlementAmount" placeholder="مثلاً ۵۰۰۰۰۰" />
+    </div>
+    <div class="form-group">
+      <label>یادداشت (اختیاری)</label>
+      <input type="text" id="settlementNote" placeholder="مثلاً: حقوق شهریور" />
+    </div>
+    <div id="settlementError" style="color:#C62828;font-size:.85rem;display:none;margin-bottom:8px"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('settlementModal')" class="btn-secondary">انصراف</button>
+      <button onclick="doSettlement()" class="btn-primary"><i class="fas fa-save"></i> ثبت تصفیه</button>
+    </div>
+  </div>
+</div>
+
+<!-- Video Upload Modal -->
+@if(isSM){
+<style>
+.vid-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:16px}
+.vid-modal-overlay.open{display:flex}
+.vid-modal{background:#fff;border-radius:16px;width:min(500px,100%);direction:rtl;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+.vid-modal-head{background:linear-gradient(135deg,var(--teal) 0%,var(--teal-light) 100%);padding:20px 24px;display:flex;align-items:center;justify-content:space-between}
+.vid-modal-head h3{color:#fff;font-size:1rem;font-weight:700;margin:0;display:flex;align-items:center;gap:8px}
+.vid-modal-close{width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.2);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.9rem;transition:background .2s}
+.vid-modal-close:hover{background:rgba(255,255,255,.35)}
+.vid-modal-body{padding:24px}
+.vm-section-label{font-size:.72rem;font-weight:700;color:var(--teal);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.vm-section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.vm-field{margin-bottom:14px}
+.vm-field label{display:block;font-size:.8rem;font-weight:600;color:var(--mid);margin-bottom:6px}
+.vm-field input{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;color:var(--dark);outline:none;transition:border-color .2s,box-shadow .2s;box-sizing:border-box}
+.vm-field input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(46,125,114,.1)}
+.vm-stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vm-stat-item{display:flex;flex-direction:column;gap:5px}
+.vm-stat-item label{font-size:.78rem;font-weight:600;color:var(--mid);display:flex;align-items:center;gap:5px}
+.vm-stat-item input{padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;outline:none;transition:border-color .2s,box-shadow .2s}
+.vm-stat-item input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(46,125,114,.1)}
+.vid-modal-foot{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.vm-btn{padding:9px 20px;border-radius:8px;border:none;font-family:inherit;font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s}
+.vm-btn.cancel{background:var(--light);color:var(--mid);border:1.5px solid var(--border)}
+.vm-btn.cancel:hover{border-color:var(--mid)}
+.vm-btn.save{background:var(--teal);color:#fff}
+.vm-btn.save:hover{background:#246058}
+.vm-btn.save:active{transform:scale(.97)}
+.vm-btn.save:disabled{opacity:.6;cursor:not-allowed}
+.vm-error{font-size:.8rem;color:#C62828;background:#FFEBEE;border:1px solid #FFCDD2;border-radius:8px;padding:8px 12px;margin-bottom:12px;display:none}
+/* datepicker inside modal needs higher z-index */
+.datepicker-plot-area, .pdp-root{ z-index:1100 !important; }
+</style>
+<div id="vidModal" class="vid-modal-overlay">
+  <div class="vid-modal">
+    <div class="vid-modal-head">
+      <h3><i class="fas fa-video"></i> ویرایش اطلاعات ویدئو</h3>
+      <button class="vid-modal-close" onclick="document.getElementById('vidModal').classList.remove('open')"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="vid-modal-body">
+      <input type="hidden" id="vm-cardId">
+      <div id="vm-error" class="vm-error"></div>
+
+      <div class="vm-section-label"><i class="fas fa-info-circle"></i> اطلاعات انتشار</div>
+      <div id="vm-client-project-display" style="margin-bottom:12px;display:none">
+        <span style="font-size:.78rem;color:var(--mid);font-weight:600">پروژه مشتری:</span>
+        <span id="vm-client-project-name" style="display:inline-block;background:#E3F2FD;color:#1565C0;border-radius:20px;padding:2px 10px;font-size:.78rem;font-weight:600;margin-right:6px"></span>
+      </div>
+      <div class="vm-field" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="display:block;font-size:.8rem;font-weight:600;color:var(--mid);margin-bottom:6px">تاریخ احتمالی آپلود</label>
+          <div style="position:relative">
+            <input id="vm-date" type="text" placeholder="1403/07/20" autocomplete="off"
+              style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;outline:none;box-sizing:border-box;transition:border-color .2s"
+              oninput="vmDateInput(this)" onkeydown="vmDateKey(event,this)">
+            <i class="fas fa-calendar-alt" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--mid);font-size:.85rem;pointer-events:none"></i>
+          </div>
+          <div id="vm-date-hint" style="font-size:.72rem;color:var(--mid);margin-top:4px">فرمت: ۱۴۰۳/۰۷/۲۰</div>
+        </div>
+        <div>
+          <label style="display:block;font-size:.8rem;font-weight:600;color:var(--mid);margin-bottom:6px">ساعت احتمالی آپلود</label>
+          <input id="vm-time" type="time"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;outline:none;box-sizing:border-box;transition:border-color .2s">
+        </div>
+      </div>
+
+      <div class="vm-section-label" style="margin-top:18px"><i class="fas fa-chart-bar"></i> آمار ویدئو <span style="font-size:.72rem;font-weight:400;color:var(--mid)">(اختیاری)</span></div>
+      <div class="vm-stats-grid">
+        <div class="vm-stat-item">
+          <label><i class="fas fa-eye" style="color:var(--teal)"></i> بازدید</label>
+          <input id="vm-views" type="number" min="0" placeholder="0">
+        </div>
+        <div class="vm-stat-item">
+          <label><i class="fas fa-heart" style="color:#E91E63"></i> لایک</label>
+          <input id="vm-likes" type="number" min="0" placeholder="0">
+        </div>
+        <div class="vm-stat-item">
+          <label><i class="fas fa-share-alt" style="color:#1565C0"></i> شیر</label>
+          <input id="vm-shares" type="number" min="0" placeholder="0">
+        </div>
+        <div class="vm-stat-item">
+          <label><i class="fas fa-retweet" style="color:#2E7D32"></i> ریپست</label>
+          <input id="vm-reposts" type="number" min="0" placeholder="0">
+        </div>
+        <div class="vm-stat-item" style="grid-column:1/-1">
+          <label><i class="fas fa-forward" style="color:#E65100"></i> اسکیپ ریت (%)</label>
+          <input id="vm-skip" type="number" min="0" max="100" step="0.1" placeholder="0.0">
+        </div>
+      </div>
+    </div>
+    <div class="vid-modal-foot">
+      <button class="vm-btn cancel" onclick="document.getElementById('vidModal').classList.remove('open')"><i class="fas fa-times"></i> انصراف</button>
+      <button class="vm-btn save" id="vm-save-btn" onclick="saveVideoData()"><i class="fas fa-check"></i> ذخیره</button>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: CONTRACTS -->
+<div id="tab-contracts" class="rtab-content @(activeTab!="contracts"?"d-none":"")">
+<style>
+.ct-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:20px;background:var(--white);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px}
+.ct-card{background:var(--white);border:1.5px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:16px}
+.ct-card-head{display:flex;align-items:center;gap:12px;padding:14px 18px;background:#f8f8f8;border-bottom:1px solid var(--border)}
+.ct-card-title{font-weight:700;font-size:.95rem;flex:1}
+.ct-card-dates{font-size:.78rem;color:var(--mid);display:flex;align-items:center;gap:6px}
+.ct-items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1px;background:var(--border)}
+.ct-item{background:#fff;padding:14px 16px}
+.ct-item-type{font-size:.78rem;color:var(--mid);margin-bottom:4px}
+.ct-item-count{font-size:1.1rem;font-weight:800;color:var(--teal)}
+.ct-item-note{font-size:.74rem;color:var(--mid);margin-top:2px}
+.ct-progress{height:6px;background:#e0e0e0;border-radius:3px;margin-top:8px;overflow:hidden}
+.ct-progress-bar{height:100%;background:var(--teal);border-radius:3px;transition:width .4s}
+.ct-progress-bar.warn{background:#E57373}
+.ct-item-stats{display:flex;gap:10px;margin-top:6px;font-size:.75rem}
+.ct-stat{display:flex;flex-direction:column;align-items:center;gap:1px}
+.ct-stat-val{font-weight:700;font-size:.9rem}
+.ct-stat-lbl{color:var(--mid)}
+.ct-report-toggle{background:none;border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:.78rem;cursor:pointer;color:var(--mid);display:flex;align-items:center;gap:5px}
+.ct-report-toggle:hover{border-color:var(--teal);color:var(--teal)}
+.ct-report-body{display:none;padding:0 18px 18px}
+.ct-upload-list{margin-top:10px;font-size:.8rem}
+.ct-upload-row{padding:5px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;color:var(--dark)}
+.ct-upload-row:last-child{border-bottom:none}
+/* Modal */
+.ct-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:none;align-items:center;justify-content:center}
+.ct-modal-overlay.open{display:flex}
+.ct-modal{background:#fff;border-radius:16px;width:min(680px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);direction:rtl}
+.ct-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);font-weight:700;font-size:1rem}
+.ct-modal-body{padding:20px}
+.ct-modal-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end}
+.ct-field{margin-bottom:14px}
+.ct-field label{display:block;font-size:.8rem;font-weight:600;color:var(--mid);margin-bottom:5px}
+.ct-field input,.ct-field select,.ct-field textarea{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;box-sizing:border-box;outline:none}
+.ct-field textarea{resize:vertical;min-height:60px}
+.ct-items-editor{margin-top:16px}
+.ct-items-editor-head{font-weight:700;font-size:.85rem;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.ct-item-row{display:grid;grid-template-columns:1fr 80px 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
+.ct-item-row input,.ct-item-row select{padding:7px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:.82rem;width:100%;box-sizing:border-box}
+.ct-item-del{background:none;border:1px solid #ffcdd2;color:#E53935;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:.8rem}
+.ct-item-del:hover{background:#FFEBEE}
+.ct-add-item-btn{background:none;border:1.5px dashed var(--border);color:var(--mid);border-radius:8px;padding:8px;width:100%;cursor:pointer;font-family:inherit;font-size:.82rem}
+.ct-add-item-btn:hover{border-color:var(--teal);color:var(--teal)}
+.ct-empty{text-align:center;padding:40px;color:var(--mid)}
+.ct-behind{color:#E53935;font-weight:700}
+</style>
+
+@{var taskTypesForContracts = Model.TaskTypes;}
+
+<div class="ct-toolbar">
+  <select id="ctFilterCp" onchange="loadContracts()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;background:#fff;min-width:160px">
+    <option value="">همه پروژه‌های مشتری</option>
+    @foreach(var cp in cpListForContracts){
+      <option value="@cp.Id">@cp.Name</option>
+    }
+  </select>
+  <button class="btn-primary" onclick="openContractModal(0)" style="margin-right:auto"><i class="fas fa-plus"></i> قرارداد جدید</button>
+</div>
+<div id="ct-list"><div class="ct-empty"><i class="fas fa-spinner fa-spin"></i> در حال بارگذاری...</div></div>
+</div>
+}
+
+<!-- Contract Modal -->
+@if(isSM){
+<div id="ctModal" class="ct-modal-overlay">
+  <div class="ct-modal">
+    <div class="ct-modal-head">
+      <span><i class="fas fa-file-contract"></i> <span id="ct-modal-title">قرارداد جدید</span></span>
+      <button onclick="document.getElementById('ctModal').classList.remove('open')" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--mid)"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="ct-modal-body">
+      <input type="hidden" id="ct-id" value="0" />
+      <div class="ct-field">
+        <label>پروژه مشتری <span style="color:#E53935">*</span></label>
+        <select id="ct-cp">
+          <option value="">— انتخاب کنید —</option>
+          @foreach(var cp in cpListForContracts){
+            <option value="@cp.Id">@cp.Name</option>
+          }
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="ct-field">
+          <label>تاریخ شروع (شمسی)</label>
+          <input type="text" id="ct-start" placeholder="۱۴۰۳/۰۱/۰۱" oninput="ctDateInput(this)" />
+        </div>
+        <div class="ct-field">
+          <label>تاریخ پایان (شمسی)</label>
+          <input type="text" id="ct-end" placeholder="۱۴۰۳/۱۲/۲۹" oninput="ctDateInput(this)" />
+        </div>
+      </div>
+      <div class="ct-field">
+        <label>توضیحات (اختیاری)</label>
+        <textarea id="ct-desc" placeholder="جزئیات قرارداد..."></textarea>
+      </div>
+      <div class="ct-items-editor">
+        <div class="ct-items-editor-head"><i class="fas fa-list-check" style="color:var(--teal)"></i> آیتم‌های قرارداد</div>
+        <div style="display:grid;grid-template-columns:1fr 80px 1fr auto;gap:8px;margin-bottom:6px">
+          <span style="font-size:.75rem;color:var(--mid);font-weight:600">نوع تسک</span>
+          <span style="font-size:.75rem;color:var(--mid);font-weight:600">تعداد/ماه</span>
+          <span style="font-size:.75rem;color:var(--mid);font-weight:600">توضیح (مثلاً: زیر ۱ دقیقه)</span>
+          <span></span>
+        </div>
+        <div id="ct-items-list"></div>
+        <button class="ct-add-item-btn" onclick="addContractItem()"><i class="fas fa-plus"></i> افزودن آیتم</button>
+      </div>
+    </div>
+    <div class="ct-modal-foot">
+      <button class="btn-secondary" onclick="document.getElementById('ctModal').classList.remove('open')">انصراف</button>
+      <button class="btn-primary" onclick="saveContract()"><i class="fas fa-check"></i> ذخیره</button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Wage Adjustment Modal -->
+@if(isSM){
+<div id="wageAdjModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3><i class="fas fa-coins"></i> افزودن دستمزد دریافت‌نشده</h3>
+      <button onclick="closeModal('wageAdjModal')"><i class="fas fa-times"></i></button>
+    </div>
+    <p style="color:var(--mid);margin-bottom:16px;font-size:.9rem">
+      برای: <strong id="wageAdjUserName"></strong>
+    </p>
+    <p style="font-size:.82rem;color:var(--mid);margin-bottom:16px">
+      این مبلغ به مانده تصفیه‌نشده عضو اضافه می‌شود و در ستون «قابل پرداخت» نشان داده می‌شود.
+    </p>
+    <input type="hidden" id="wageAdjUserId" />
+    <div class="form-group">
+      <label>مبلغ (تومان)</label>
+      <input type="number" id="wageAdjAmount" placeholder="مثلاً ۱۵۰۰۰۰۰" min="1" />
+    </div>
+    <div class="form-group">
+      <label>توضیح</label>
+      <input type="text" id="wageAdjNote" placeholder="مثلاً: دستمزد دریافت‌نشده مهر ۱۴۰۳" />
+    </div>
+    <div id="wageAdjError" style="color:#C62828;font-size:.85rem;display:none;margin-bottom:8px"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('wageAdjModal')" class="btn-secondary">انصراف</button>
+      <button onclick="doWageAdj()" class="btn-primary"><i class="fas fa-plus-circle"></i> افزودن</button>
+    </div>
+  </div>
+</div>
+}
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/persian-date@1.1.0/dist/persian-date.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/js/persian-datepicker.min.js"></script>
+<script>
+// Jalali datepicker init
+document.querySelectorAll('.jalali-input').forEach(el => {
+  $(el).persianDatepicker({
+    format: 'YYYY/MM/DD',
+    autoClose: true,
+    observer: true,
+    calendar: { persian: { locale: 'fa' } },
+    onSelect: function(){ }
+  });
+});
+
+Chart.defaults.font={family:'Vazirmatn,Tahoma,sans-serif',size:12}; Chart.defaults.color='#4A6065';
+const COLORS=['#2E7D72','#E07B39','#4DB6AC','#F4A261','#1976D2','#43A047','#8E24AA','#E53935'];
+const fmtT=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+':'+m.toString().padStart(2,'0');};
+
+function showTab(name){
+  document.querySelectorAll('.rtab-content').forEach(el=>el.classList.add('d-none'));
+  document.querySelectorAll('.rtab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name)?.classList.remove('d-none');
+  event.currentTarget.classList.add('active');
+  document.getElementById('tabInput').value=name;
+  if(name==='videos' && _vidData.length===0) loadVideos();
+}
+function toggleSection(id){
+  const el=document.getElementById(id); const chev=el?.previousElementSibling?.querySelector('.urc-chevron');
+  if(!el)return; const open=el.style.display!=='none'; el.style.display=open?'none':'table-row';
+  if(chev)chev.style.transform=open?'':'rotate(180deg)';
+}
+function setRange(days){
+  const pd=new persianDate(); const from=new persianDate().subtract('days',days);
+  document.getElementById('fromDate').value=from.format('YYYY/MM/DD');
+  document.getElementById('toDate').value=pd.format('YYYY/MM/DD');
+  document.getElementById('reportForm').submit();
+}
+function setThisMonth(){
+  const now=new persianDate();
+  document.getElementById('fromDate').value=new persianDate([now.year(),now.month(),1]).format('YYYY/MM/DD');
+  document.getElementById('toDate').value=now.format('YYYY/MM/DD');
+  document.getElementById('reportForm').submit();
+}
+function toggleUnsettled(cb){
+  document.getElementById('unsettledOnlyInput').value=cb.checked?'true':'false';
+  document.getElementById('reportForm').submit();
+}
+
+// Wage Adjustment
+function openWageAdj(userId, userName){
+  document.getElementById('wageAdjUserId').value=userId;
+  document.getElementById('wageAdjUserName').textContent=userName;
+  document.getElementById('wageAdjAmount').value='';
+  document.getElementById('wageAdjNote').value='';
+  document.getElementById('wageAdjError').style.display='none';
+  openModal('wageAdjModal');
+}
+async function doWageAdj(){
+  const userId=document.getElementById('wageAdjUserId').value;
+  const amount=parseFloat(document.getElementById('wageAdjAmount').value)||0;
+  const note=document.getElementById('wageAdjNote').value.trim();
+  const errEl=document.getElementById('wageAdjError');
+  if(!amount||amount<=0){errEl.textContent='مبلغ را وارد کنید';errEl.style.display='block';return;}
+  const r=await fetch('/Report/AddWageAdjustment',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({projectId:@projectId,memberId:userId,amount,note})});
+  const d=await r.json();
+  if(d.success){closeModal('wageAdjModal');location.reload();}
+  else{errEl.textContent='خطا در ثبت';errEl.style.display='block';}
+}
+async function deleteWageAdj(id){
+  if(!confirm('این مبلغ حذف شود؟'))return;
+  const r=await fetch('/Report/DeleteWageAdjustment',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id})});
+  if(r.ok) location.reload();
+}
+
+// Settlement
+function openSettlement(userId, userName){
+  document.getElementById('settlementUserId').value=userId;
+  document.getElementById('settlementUserName').textContent=userName;
+  document.getElementById('settlementAmount').value='';
+  document.getElementById('settlementNote').value='';
+  document.getElementById('settlementError').style.display='none';
+  openModal('settlementModal');
+}
+async function doSettlement(){
+  const userId=document.getElementById('settlementUserId').value;
+  const date=document.getElementById('settlementDate').value;
+  const amount=parseFloat(document.getElementById('settlementAmount').value)||0;
+  const note=document.getElementById('settlementNote').value;
+  const errEl=document.getElementById('settlementError');
+  if(!date){errEl.textContent='تاریخ تصفیه را وارد کنید';errEl.style.display='block';return;}
+  if(!amount){errEl.textContent='مبلغ را وارد کنید';errEl.style.display='block';return;}
+  try{
+    const r=await fetch('/Report/AddSettlement',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({projectId:@projectId,memberId:userId,settledAt:date,amount,note})});
+    if(!r.ok){errEl.textContent='خطای سرور: '+r.status;errEl.style.display='block';return;}
+    const d=await r.json();
+    if(d.success){closeModal('settlementModal');location.reload();}
+    else{errEl.textContent=d.message||'خطا در ثبت تصفیه';errEl.style.display='block';}
+  }catch(e){errEl.textContent='خطا در اتصال به سرور';errEl.style.display='block';}
+}
+
+// Charts
+const dailyData=@Html.Raw(dailyJson),userLabels=@Html.Raw(userNamesJson),userSecs=@Html.Raw(userSecsJson),
+      cardLabels=@Html.Raw(cardNamesJson),cardSecs=@Html.Raw(cardSecsJson),
+      salLabels=@Html.Raw(salNamesJson),salVals=@Html.Raw(salValsJson);
+
+new Chart(document.getElementById('dailyTrendChart'),{type:'line',data:{labels:dailyData.map(d=>d.date),datasets:[{data:dailyData.map(d=>+(d.secs/3600).toFixed(2)),borderColor:'#2E7D72',backgroundColor:'rgba(46,125,114,.1)',tension:.4,fill:true,pointRadius:3}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'ساعت'}},x:{ticks:{maxTicksLimit:14}}}}});
+if(userLabels.length){
+  new Chart(document.getElementById('userPieChart'),{type:'doughnut',data:{labels:userLabels,datasets:[{data:userSecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:COLORS,borderWidth:2}]},options:{responsive:true,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmtT(userSecs[ctx.dataIndex])}`}}}}});
+  new Chart(document.getElementById('userBarChart'),{type:'bar',data:{labels:userLabels,datasets:[{data:userSecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:COLORS,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'ساعت'}}}}});
+}
+if(cardLabels.length){
+  new Chart(document.getElementById('topCardsChart'),{type:'bar',data:{labels:cardLabels,datasets:[{data:cardSecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:'#4DB6AC',borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+  new Chart(document.getElementById('cardBarChart'),{type:'bar',data:{labels:cardLabels,datasets:[{data:cardSecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:'#E07B39',borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,title:{display:true,text:'ساعت'}}}}});
+}
+if(salLabels.length) new Chart(document.getElementById('salaryBarChart'),{type:'bar',data:{labels:salLabels,datasets:[{data:salVals,backgroundColor:COLORS,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' ت'}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>v.toLocaleString()}}}}});
+
+const userDailyArr=@Html.Raw(userDailyJson);
+userDailyArr.forEach(u=>{const cv=document.getElementById('mini-'+u.id);if(!cv)return;try{const dd=JSON.parse(u.json);new Chart(cv,{type:'bar',data:{labels:dd.map(d=>d.date),datasets:[{data:dd.map(d=>+(d.secs/3600).toFixed(2)),backgroundColor:'rgba(46,125,114,.6)',borderRadius:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{ticks:{maxTicksLimit:10}}}}});}catch(e){}});
+
+// ── VIDEOS TAB ────────────────────────────────────────────
+let _vidData = [];
+
+async function loadVideos(){
+  const list = document.getElementById('vid-tbody');
+  const loading = document.getElementById('vid-loading');
+  const empty = document.getElementById('vid-empty');
+  if(!list) return;
+  loading.style.display='block'; list.style.display='none'; empty.style.display='none';
+  try{
+    const r = await fetch(`/Report/GetVideoCards?projectId=@projectId`);
+    _vidData = await r.json();
+    renderVideos();
+  }catch(e){ console.error(e); }
+  finally{ loading.style.display='none'; }
+}
+
+function renderVideos(){
+  const list = document.getElementById('vid-tbody');
+  const empty = document.getElementById('vid-empty');
+  const count = document.getElementById('vid-count');
+  const search = document.getElementById('vid-search')?.value.trim().toLowerCase()||'';
+  const sortField = document.getElementById('vid-sort-field')?.value||'';
+  const sortDir = document.getElementById('vid-sort-dir')?.value||'desc';
+  const filterUploaded = document.getElementById('vid-filter-uploaded')?.checked||false;
+
+  // update filter label active state
+  const filterLabel = document.getElementById('vid-filter-label');
+  if(filterLabel) filterLabel.classList.toggle('active', filterUploaded);
+
+  let data = [..._vidData];
+  if(search) data = data.filter(v=>v.title.toLowerCase().includes(search));
+  if(filterUploaded) data = data.filter(v=>!v.isUploaded);
+  if(sortField){
+    data.sort((a,b)=>{
+      if(sortField==='scheduledUploadAt'){
+        const ad=a[sortField]||'', bd=b[sortField]||'';
+        return sortDir==='asc'?ad.localeCompare(bd):bd.localeCompare(ad);
+      }
+      const av=a[sortField]??-1, bv=b[sortField]??-1;
+      return sortDir==='asc'?av-bv:bv-av;
+    });
+  }
+  count.textContent=`${data.length} ویدئو`;
+  if(!data.length){ list.style.display='none'; empty.style.display='block'; return; }
+  list.style.display='flex'; empty.style.display='none';
+  list.innerHTML = data.map(v=>`
+    <div class="vid-card ${v.isUploaded?'is-uploaded':'not-uploaded'}">
+      <div class="vid-upload-toggle ${v.isUploaded?'done':''}" onclick="toggleUpload(${v.cardId},${!v.isUploaded})" title="${v.isUploaded?'علامت‌گذاری نشده':'علامت‌گذاری آپلود شده'}">
+        <i class="fas ${v.isUploaded?'fa-check-circle':'fa-cloud-upload-alt'}"></i>
+      </div>
+      <div class="vid-info">
+        <div class="vid-title">${v.title}</div>
+        <div class="vid-meta">
+          <span class="vid-type-badge">${v.taskType}</span>
+          ${v.clientProjectName?`<span class="vid-project-name"><i class="fas fa-briefcase" style="font-size:.7rem"></i>${v.clientProjectName}</span>`:''}
+          ${(v.assignees||[]).length?`<span class="vid-assignee"><i class="fas fa-user" style="font-size:.7rem"></i> ${v.assignees.join('، ')}</span>`:''}
+          ${v.scheduledUploadAt?`<span class="vid-date"><i class="fas fa-calendar-alt"></i>${v.scheduledUploadAt}</span>`:''}
+        </div>
+      </div>
+      <div class="vid-stats">
+        <div class="vid-stat ${v.views==null?'empty':''}"><span class="vid-stat-val">${v.views!=null?Number(v.views).toLocaleString('fa-IR'):'—'}</span><span class="vid-stat-lbl">بازدید</span></div>
+        <div class="vid-stat ${v.likes==null?'empty':''}"><span class="vid-stat-val">${v.likes!=null?Number(v.likes).toLocaleString('fa-IR'):'—'}</span><span class="vid-stat-lbl">لایک</span></div>
+        <div class="vid-stat ${v.shares==null?'empty':''}"><span class="vid-stat-val">${v.shares!=null?Number(v.shares).toLocaleString('fa-IR'):'—'}</span><span class="vid-stat-lbl">شیر</span></div>
+        <div class="vid-stat ${v.reposts==null?'empty':''}"><span class="vid-stat-val">${v.reposts!=null?Number(v.reposts).toLocaleString('fa-IR'):'—'}</span><span class="vid-stat-lbl">ریپست</span></div>
+        <div class="vid-stat ${v.skipRate==null?'empty':''}"><span class="vid-stat-val">${v.skipRate!=null?v.skipRate+'%':'—'}</span><span class="vid-stat-lbl">اسکیپ</span></div>
+      </div>
+      <button class="vid-edit-btn" onclick="openVideoModal(${v.cardId})" title="ویرایش"><i class="fas fa-pen"></i></button>
+    </div>
+  `).join('');
+}
+
+async function toggleUpload(cardId, isUploaded){
+  const v = _vidData.find(x=>x.cardId===cardId);
+  if(!v) return;
+  v.isUploaded = isUploaded;
+  await fetch('/Report/SaveVideoUpload',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cardId, isUploaded, views:v.views, likes:v.likes, shares:v.shares, reposts:v.reposts, skipRate:v.skipRate, scheduledUploadAt:v.scheduledUploadAt})
+  });
+  renderVideos();
+}
+
+function openVideoModal(cardId){
+  const v = _vidData.find(x=>x.cardId===cardId);
+  if(!v) return;
+  document.getElementById('vm-cardId').value=cardId;
+  const cpDisplay=document.getElementById('vm-client-project-display');
+  const cpName=document.getElementById('vm-client-project-name');
+  if(v.clientProjectName){cpName.textContent=v.clientProjectName;cpDisplay.style.display='block';}
+  else{cpDisplay.style.display='none';}
+  const dateEl=document.getElementById('vm-date');
+  dateEl.value=v.scheduledDate||'';
+  dateEl.style.borderColor='var(--border)';
+  const hint=document.getElementById('vm-date-hint');
+  if(hint){ hint.textContent='فرمت: ۱۴۰۳/۰۷/۲۰'; hint.style.color='var(--mid)'; }
+  document.getElementById('vm-time').value=v.scheduledTime||'';
+  document.getElementById('vm-views').value=v.views??'';
+  document.getElementById('vm-likes').value=v.likes??'';
+  document.getElementById('vm-shares').value=v.shares??'';
+  document.getElementById('vm-reposts').value=v.reposts??'';
+  document.getElementById('vm-skip').value=v.skipRate??'';
+  document.getElementById('vm-error').style.display='none';
+  const saveBtn=document.getElementById('vm-save-btn');
+  saveBtn.disabled=false;
+  saveBtn.innerHTML='<i class="fas fa-check"></i> ذخیره';
+  document.getElementById('vidModal').classList.add('open');
+}
+
+async function saveVideoData(){
+  const cardId=parseInt(document.getElementById('vm-cardId').value);
+  if(!cardId){ return; }
+  const v=_vidData.find(x=>x.cardId===cardId);
+  const errEl=document.getElementById('vm-error');
+  const saveBtn=document.getElementById('vm-save-btn');
+  errEl.style.display='none';
+  saveBtn.disabled=true;
+  saveBtn.innerHTML='<i class="fas fa-spinner fa-spin"></i> در حال ذخیره...';
+
+  const numVal=(id)=>{ const val=document.getElementById(id).value; return val!==''?parseFloat(val):null; };
+  const payload={
+    cardId,
+    isUploaded: v?.isUploaded??false,
+    projectName: null,
+    scheduledUploadAt: (()=>{
+      const d=document.getElementById('vm-date').value.trim();
+      const t=document.getElementById('vm-time').value.trim();
+      if(!d) return null;
+      // validate format YYYY/MM/DD
+      const parts=d.split('/');
+      if(parts.length!==3||parts[0].length!==4||parts[1].length!==2||parts[2].length!==2) return null;
+      return t ? `${d} ${t}` : `${d} 00:00`;
+    })(),
+    views: numVal('vm-views'),
+    likes: numVal('vm-likes'),
+    shares: numVal('vm-shares'),
+    reposts: numVal('vm-reposts'),
+    skipRate: numVal('vm-skip')
+  };
+  try{
+    const r=await fetch('/Report/SaveVideoUpload',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!r.ok){ throw new Error('HTTP '+r.status); }
+    const json=await r.json();
+    if(json.success){
+      // آپدیت موقت داده محلی تا reload کامل نشده
+      if(v){
+        v.scheduledUploadAt=payload.scheduledUploadAt;
+        v.scheduledDate=document.getElementById('vm-date').value.trim()||null;
+        v.scheduledTime=document.getElementById('vm-time').value.trim()||null;
+      }
+      document.getElementById('vidModal').classList.remove('open');
+      await loadVideos();
+    } else {
+      errEl.textContent=json.message||'خطا در ذخیره‌سازی';
+      errEl.style.display='block';
+    }
+  }catch(e){
+    errEl.textContent='خطا در اتصال به سرور';
+    errEl.style.display='block';
+  }finally{
+    saveBtn.disabled=false;
+    saveBtn.innerHTML='<i class="fas fa-check"></i> ذخیره';
+  }
+}
+
+// ── تاریخ شمسی — auto-format و validation ───────────────
+function vmDateInput(el){
+  let v = el.value.replace(/[^0-9/]/g,'');
+  // auto-insert slashes
+  if(v.length===4 && !v.includes('/')) v = v+'/';
+  else if(v.length===7 && v.split('/').length===2) v = v+'/';
+  el.value = v;
+  const hint = document.getElementById('vm-date-hint');
+  const parts = v.split('/');
+  const valid = parts.length===3 && parts[0].length===4 && parts[1].length===2 && parts[2].length===2
+    && !isNaN(+parts[0]) && +parts[1]>=1 && +parts[1]<=12 && +parts[2]>=1 && +parts[2]<=31;
+  el.style.borderColor = v.length===0 ? 'var(--border)' : (valid ? '#4CAF50' : 'var(--border)');
+  hint.textContent = v.length===0 ? 'فرمت: ۱۴۰۳/۰۷/۲۰' : (valid ? '✓ تاریخ معتبر' : 'فرمت: ۱۴۰۳/۰۷/۲۰');
+  hint.style.color = valid ? '#4CAF50' : 'var(--mid)';
+}
+function vmDateKey(e, el){
+  // allow: digits, slash, backspace, delete, arrows, tab
+  if(!/[0-9/]/.test(e.key) && !['Backspace','Delete','ArrowLeft','ArrowRight','Tab'].includes(e.key)) e.preventDefault();
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('vid-search')?.addEventListener('input', renderVideos);
+  document.getElementById('vid-sort-field')?.addEventListener('change', renderVideos);
+  document.getElementById('vid-sort-dir')?.addEventListener('change', renderVideos);
+  document.getElementById('vid-filter-uploaded')?.addEventListener('change', renderVideos);
+  if('@activeTab'==='videos') loadVideos();
+  if('@activeTab'==='contracts') loadContracts();
+});
+
+// ── CONTRACTS ─────────────────────────────────────────────
+const TASK_TYPES_FOR_CT = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+  (Model.TaskTypes ?? new()).Select(tt => new { id = tt.Id, name = tt.Name })
+));
+
+function shamsiToDate(s){
+  if(!s) return null;
+  const norm = s.replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+  const parts = norm.split('/');
+  if(parts.length !== 3) return null;
+  const jy = parseInt(parts[0]), jm = parseInt(parts[1]), jd = parseInt(parts[2]);
+  if(!jy || !jm || !jd || jm<1||jm>12||jd<1||jd>31) return null;
+
+  // تابع تشخیص سال کبیسه شمسی
+  function isJLeap(y){ return (((y-474)%2820+474+38)*682%2816) < 682; }
+
+  // مرجع: 1 فروردین 1403 = 20 مارس 2024
+  const ref_jy = 1403;
+  const ref_ms = Date.UTC(2024, 2, 20); // 2024-03-20
+
+  let totalDays = 0;
+  if(jy >= ref_jy){
+    for(let y=ref_jy; y<jy; y++) totalDays += isJLeap(y)?366:365;
+  } else {
+    for(let y=jy; y<ref_jy; y++) totalDays -= isJLeap(y)?366:365;
+  }
+  for(let i=1; i<jm; i++) totalDays += i<=6 ? 31 : 30;
+  totalDays += jd - 1;
+
+  const d = new Date(ref_ms + totalDays * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}T00:00:00Z`;
+}
+
+function ctDateInput(el){
+  // نرمالایز اعداد فارسی به انگلیسی
+  el.value = el.value.replace(/[۰-۹]/g,d=>'0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]);
+}
+
+let _ctData = [];
+async function loadContracts(){
+  const cpFilter = document.getElementById('ctFilterCp')?.value||'';
+  const r = await fetch(`/Report/GetContracts?projectId=@projectId`);
+  _ctData = await r.json();
+  renderContracts(cpFilter);
+}
+
+function renderContracts(cpFilter=''){
+  const list = document.getElementById('ct-list');
+  if(!list) return;
+  let data = _ctData;
+  if(cpFilter) data = data.filter(c=>String(c.clientProjectId)===cpFilter);
+  if(!data.length){ list.innerHTML='<div class="ct-empty"><i class="fas fa-file-contract"></i><p>هیچ قراردادی ثبت نشده</p></div>'; return; }
+  list.innerHTML = data.map(c=>`
+    <div class="ct-card">
+      <div class="ct-card-head">
+        <span style="width:14px;height:14px;border-radius:50%;background:${c.clientProjectColor};display:inline-block;flex-shrink:0"></span>
+        <span class="ct-card-title">${c.clientProjectName}</span>
+        <span class="ct-card-dates"><i class="fas fa-calendar-alt"></i> ${c.startDateJ} تا ${c.endDateJ}</span>
+        ${c.description?`<span style="font-size:.75rem;color:var(--mid);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.description}</span>`:''}
+        <button class="ct-report-toggle" onclick="toggleCtReport(${c.id},this)"><i class="fas fa-chart-bar"></i> گزارش</button>
+        <button class="ct-report-toggle" onclick="openContractModal(${c.id})" style="border-color:#ddd"><i class="fas fa-pen"></i></button>
+        <button class="ct-report-toggle" onclick="deleteContract(${c.id})" style="border-color:#ffcdd2;color:#E53935"><i class="fas fa-trash"></i></button>
+      </div>
+      <div class="ct-items-grid">
+        ${c.items.map(it=>`
+          <div class="ct-item">
+            <div class="ct-item-type">${it.taskTypeName}</div>
+            <div class="ct-item-count">${it.countPerMonth} <span style="font-size:.7rem;font-weight:400">در ماه</span></div>
+            ${it.note?`<div class="ct-item-note">${it.note}</div>`:''}
+          </div>
+        `).join('')}
+      </div>
+      <div class="ct-report-body" id="ct-report-${c.id}"></div>
+    </div>
+  `).join('');
+}
+
+async function toggleCtReport(id, btn){
+  const body = document.getElementById(`ct-report-${id}`);
+  if(body.style.display==='block'){ body.style.display='none'; return; }
+  body.style.display='block';
+  body.innerHTML='<div style="padding:16px;color:var(--mid);font-size:.85rem"><i class="fas fa-spinner fa-spin"></i> در حال محاسبه...</div>';
+  const r = await fetch(`/Report/GetContractReport?contractId=${id}`);
+  const d = await r.json();
+  body.innerHTML = `
+    <div style="padding:14px 18px;background:#f0fafa;border-bottom:1px solid var(--border);font-size:.8rem;color:var(--mid);display:flex;gap:18px;flex-wrap:wrap">
+      <span><i class="fas fa-calendar"></i> امروز: ${d.nowJ}</span>
+      <span><i class="fas fa-clock"></i> ${d.elapsedMonths} از ${d.totalMonths} ماه گذشته</span>
+    </div>
+    ${d.items.map(it=>{
+      const pct = it.expectedSoFar>0 ? Math.min(100,Math.round(it.uploadedCount/it.expectedSoFar*100)) : 0;
+      const warn = it.remaining > 0;
+      return `<div style="padding:14px 18px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+          <strong style="font-size:.88rem">${it.taskTypeName}</strong>
+          ${it.note?`<span style="font-size:.75rem;color:var(--mid)">(${it.note})</span>`:''}
+          <div style="display:flex;gap:14px;margin-right:auto;font-size:.8rem">
+            <span style="color:var(--teal)"><i class="fas fa-check-circle"></i> آپلودشده: <strong>${it.uploadedCount}</strong></span>
+            <span><i class="fas fa-calendar-check"></i> هدف ماه جاری: <strong>${it.expectedSoFar}</strong></span>
+            <span style="color:var(--mid)"><i class="fas fa-list-ol"></i> کل قرارداد: <strong>${it.totalAllowed}</strong></span>
+            ${warn?`<span class="ct-behind"><i class="fas fa-exclamation-triangle"></i> باقی‌مانده: <strong>${it.remaining}</strong></span>`:`<span style="color:#43A047"><i class="fas fa-check"></i> به‌روز</span>`}
+          </div>
+        </div>
+        <div class="ct-progress"><div class="ct-progress-bar${warn?' warn':''}" style="width:${pct}%"></div></div>
+        <div style="font-size:.72rem;color:var(--mid);margin-top:3px">${pct}٪ از هدف ماه جاری</div>
+        ${it.uploads.length?`
+          <div class="ct-upload-list">
+            <div style="font-size:.75rem;color:var(--mid);font-weight:600;margin-bottom:4px">محتواهای آپلودشده:</div>
+            ${it.uploads.map(u=>`<div class="ct-upload-row"><span>${u.title}</span><span style="color:var(--mid)">${u.uploadedAtJ}</span></div>`).join('')}
+          </div>`:''}
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function addContractItem(taskTypeId='', countPerMonth='', note=''){
+  const list = document.getElementById('ct-items-list');
+  const div = document.createElement('div');
+  div.className = 'ct-item-row';
+  div.innerHTML = `
+    <select onchange="">${TASK_TYPES_FOR_CT.map(tt=>`<option value="${tt.id}" ${String(tt.id)===String(taskTypeId)?'selected':''}>${tt.name}</option>`).join('')}</select>
+    <input type="number" min="1" placeholder="تعداد" value="${countPerMonth}" />
+    <input type="text" placeholder="توضیح اختیاری" value="${note}" />
+    <button class="ct-item-del" onclick="this.closest('.ct-item-row').remove()"><i class="fas fa-trash"></i></button>
+  `;
+  list.appendChild(div);
+}
+
+function openContractModal(id){
+  document.getElementById('ct-id').value=id;
+  document.getElementById('ct-modal-title').textContent = id>0?'ویرایش قرارداد':'قرارداد جدید';
+  document.getElementById('ct-items-list').innerHTML='';
+  if(id>0){
+    const c = _ctData.find(x=>x.id===id);
+    if(c){
+      document.getElementById('ct-cp').value=c.clientProjectId;
+      document.getElementById('ct-start').value=c.startDateJ;
+      document.getElementById('ct-end').value=c.endDateJ;
+      document.getElementById('ct-desc').value=c.description;
+      c.items.forEach(it=>addContractItem(it.taskTypeId,it.countPerMonth,it.note));
+    }
+  } else {
+    document.getElementById('ct-cp').value='';
+    document.getElementById('ct-start').value='';
+    document.getElementById('ct-end').value='';
+    document.getElementById('ct-desc').value='';
+    addContractItem();
+  }
+  document.getElementById('ctModal').classList.add('open');
+}
+
+async function saveContract(){
+  const id=parseInt(document.getElementById('ct-id').value)||0;
+  const clientProjectId=parseInt(document.getElementById('ct-cp').value)||0;
+  const startRaw=document.getElementById('ct-start').value.trim();
+  const endRaw=document.getElementById('ct-end').value.trim();
+  const desc=document.getElementById('ct-desc').value.trim();
+  if(!clientProjectId){alert('پروژه مشتری را انتخاب کنید');return;}
+  if(!startRaw||!endRaw){alert('تاریخ شروع و پایان را وارد کنید');return;}
+  const startDate=shamsiToDate(startRaw), endDate=shamsiToDate(endRaw);
+  if(!startDate||!endDate){alert('فرمت تاریخ صحیح نیست (مثال: ۱۴۰۳/۰۱/۰۱)');return;}
+  if(startDate >= endDate){alert('تاریخ پایان باید بعد از تاریخ شروع باشد');return;}
+  const rows=[...document.getElementById('ct-items-list').querySelectorAll('.ct-item-row')];
+  const items=rows.map(row=>{
+    const sels=row.querySelectorAll('select,input');
+    return{taskTypeId:parseInt(sels[0].value)||0,countPerMonth:parseInt(sels[1].value)||0,note:sels[2].value.trim()||null};
+  }).filter(it=>it.taskTypeId>0&&it.countPerMonth>0);
+  if(!items.length){alert('حداقل یک آیتم قرارداد اضافه کنید');return;}
+  const r=await fetch('/Report/SaveContract',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id,clientProjectId,startDate,endDate,description:desc||null,items})});
+  const d=await r.json();
+  if(d.success){document.getElementById('ctModal').classList.remove('open');await loadContracts();}
+}
+
+async function deleteContract(id){
+  if(!confirm('این قرارداد حذف شود؟'))return;
+  await fetch('/Report/DeleteContract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({itemId:id})});
+  await loadContracts();
+}
+</script>
+}

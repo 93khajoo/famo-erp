@@ -1,0 +1,85 @@
+.report-page{padding:24px 32px;max-width:1200px;margin:0 auto}
+.report-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.report-header h1{font-size:1.3rem;color:var(--teal);display:flex;align-items:center;gap:8px}
+.report-filter-bar{background:#fff;border-radius:var(--r);padding:16px 20px;margin-bottom:24px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow);border:1px solid var(--border)}
+.filter-group{display:flex;flex-direction:column;gap:4px}
+.filter-group label{font-size:.78rem;font-weight:700;color:var(--mid)}
+.filter-group input{padding:7px 10px;border:1.5px solid var(--border);border-radius:7px;font-family:inherit;font-size:.88rem}
+.quick-date-btns{display:flex;gap:6px;align-items:flex-end}
+.quick-date-btns button{background:var(--light);border:1px solid var(--border);color:var(--mid);padding:7px 12px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:.8rem}
+.quick-date-btns button:hover{border-color:var(--teal);color:var(--teal);background:var(--teal-pale)}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.kpi-card{background:#fff;border-radius:var(--r-lg);padding:20px 24px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow);border-top:4px solid}
+.kpi-card.teal{border-color:var(--teal)}.kpi-card.orange{border-color:var(--orange)}.kpi-card.blue{border-color:#1976D2}.kpi-card.green{border-color:#43A047}
+.kpi-icon{font-size:1.3rem;opacity:.6}
+.kpi-card.teal .kpi-icon{color:var(--teal)}.kpi-card.orange .kpi-icon{color:var(--orange)}.kpi-card.blue .kpi-icon{color:#1976D2}.kpi-card.green .kpi-icon{color:#43A047}
+.kpi-value{font-size:1.5rem;font-weight:800;color:var(--dark)}
+.kpi-label{font-size:.8rem;color:var(--mid)}
+.report-tabs{display:flex;gap:4px;margin-bottom:20px;background:#fff;border-radius:12px;padding:6px;border:1px solid var(--border);width:fit-content;flex-wrap:wrap}
+.rtab{background:none;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:600;color:var(--mid);display:flex;align-items:center;gap:6px}
+.rtab.active{background:var(--teal);color:#fff}
+.rtab:hover:not(.active){background:var(--teal-pale);color:var(--teal)}
+.d-none{display:none!important}
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.chart-card{background:#fff;border-radius:var(--r-lg);padding:20px 24px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.chart-card.wide{grid-column:1/-1}
+.chart-card h3{font-size:.9rem;color:var(--teal);font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.user-report-card{background:#fff;border-radius:var(--r-lg);margin-bottom:16px;box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
+.urc-header{display:flex;align-items:center;gap:12px;padding:16px 20px;cursor:pointer}
+.urc-header:hover{background:var(--light)}
+.urc-avatar{width:42px;height:42px;border-radius:50%;background:var(--teal);color:#fff;font-size:1.1rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.urc-info{flex:1}.urc-info strong{display:block;font-size:.95rem}.urc-info span{font-size:.78rem;color:var(--mid)}
+.urc-stats{display:flex;gap:20px}
+.urc-stat{display:flex;flex-direction:column;align-items:center;gap:2px}
+.urc-val{font-size:1.05rem;font-weight:800}.urc-val.teal{color:var(--teal)}.urc-val.orange{color:var(--orange)}.urc-val.blue{color:#1976D2}
+.urc-stat span:last-child{font-size:.72rem;color:var(--mid)}
+.urc-chevron{color:var(--mid);transition:transform .25s;margin-right:4px}
+.urc-body{border-top:1px solid var(--border);padding:20px}
+.urc-mini-chart{margin-bottom:16px}
+.mini-bar{height:6px;background:var(--border);border-radius:3px;margin-bottom:2px;overflow:hidden}
+.mini-bar div{height:100%;border-radius:3px;background:var(--teal-light)}
+.report-table-wrap{background:#fff;border-radius:var(--r-lg);overflow:hidden;border:1px solid var(--border);box-shadow:var(--shadow)}
+.report-table{width:100%;border-collapse:collapse;font-size:.88rem}
+.report-table th{background:var(--teal-pale);color:var(--teal);padding:11px 14px;text-align:right;font-weight:700}
+.report-table td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle}
+.report-table tr:last-child td{border:none}
+.report-table tr:hover td{background:var(--light)}
+.salary-table tfoot td{background:var(--teal-pale);font-weight:700;border-top:2px solid var(--teal-light)}
+.total-row .salary-badge.total{background:var(--teal);color:#fff;font-size:.95rem}
+.list-badge{background:var(--orange-pale);color:var(--orange);padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:700}
+.user-chips{display:flex;flex-direction:column;gap:6px}
+.user-chip{display:flex;align-items:center;gap:6px;font-size:.8rem}
+.chip-av{width:22px;height:22px;border-radius:50%;background:var(--teal);color:#fff;font-size:.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.chip-name{flex:1;color:var(--dark)}.chip-time{color:var(--teal);font-weight:600}
+.empty-report{text-align:center;padding:60px;color:var(--mid);background:#fff;border-radius:var(--r-lg);border:1px solid var(--border)}
+.empty-report i{font-size:2.5rem;opacity:.3;display:block;margin-bottom:12px}
+.rate-hint{background:var(--orange-pale);border:1px solid rgba(224,123,57,.3);border-radius:10px;padding:12px 18px;margin-top:16px;color:var(--orange);font-size:.85rem;display:flex;align-items:center;gap:10px}
+.penalty-banner{background:#FFF3E0;border:1px solid rgba(224,123,57,.35);color:#A8531F;border-radius:10px;padding:11px 16px;margin-bottom:16px;font-size:.85rem;display:flex;align-items:center;gap:10px}
+.penalty-banner i{color:var(--orange);font-size:1rem;flex-shrink:0}
+.overdue-badge{background:#FFEBEE;color:#C62828;padding:4px 10px;border-radius:20px;font-size:.78rem;font-weight:700;white-space:nowrap}
+.ontime-badge{background:#E8F5E9;color:#2E7D32;padding:4px 10px;border-radius:20px;font-size:.78rem;font-weight:700;white-space:nowrap}
+.penalty-badge{background:#FFEBEE;color:#C62828;padding:4px 10px;border-radius:20px;font-size:.78rem;font-weight:800;white-space:nowrap}
+.has-penalty-row:hover td{background:#FFF8F0!important}
+.penalty-detail-row td{padding:0!important;background:#FAFAFA}
+.penalty-detail-box{padding:16px 20px}
+.salary-badge{background:var(--teal-pale);color:var(--teal);padding:3px 10px;border-radius:20px;font-size:.8rem;font-weight:700}
+.salary-badge.zeroed{background:#FFEBEE;color:#C62828}
+.avatar-sm{width:24px;height:24px;border-radius:50%;background:var(--teal);color:#fff;font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.time-badge{background:var(--teal-pale);color:var(--teal);padding:3px 10px;border-radius:20px;font-size:.8rem;font-weight:700}
+.my-salary-card{background:#fff;border-radius:var(--r-lg);padding:24px;border:1px solid var(--border);box-shadow:var(--shadow);margin-top:20px}
+.my-salary-card h3{font-size:.95rem;color:var(--teal);font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.my-salary-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
+.ms-item{background:var(--light);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;text-align:center}
+.ms-label{font-size:.76rem;color:var(--mid);font-weight:600}
+.ms-val{font-size:.95rem;font-weight:800;color:var(--dark)}
+.ms-item.ms-danger{background:#FFEBEE}
+.ms-item.ms-danger .ms-val{color:#C62828}
+.ms-item.ms-total{background:var(--teal)}
+.ms-item.ms-total .ms-label,.ms-item.ms-total .ms-val{color:#fff}
+.ontime-banner{background:#E8F5E9;color:#2E7D32;border-radius:10px;padding:12px 16px;font-size:.85rem;display:flex;align-items:center;gap:10px}
+@media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.charts-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.my-salary-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.kpi-grid{grid-template-columns:1fr 1fr}.report-filter-bar{flex-direction:column;align-items:stretch}}
+
+/* ── Settlement ───────────────────────────────────────── */
+.settlement-badge{background:#E8F5E9;color:#2E7D32;padding:3px 8px;border-radius:6px;font-size:.75rem;font-weight:600}

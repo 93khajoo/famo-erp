@@ -1,0 +1,25 @@
+@{ ViewData["Title"]="ورود"; var ru=ViewData["ReturnUrl"]?.ToString()??"/"; }
+<div class="login-page"><div class="login-box">
+<img src="~/images/logo.png" alt="FAMO" class="login-logo" onerror="this.style.display='none'" />
+<h2>ورود به فامو برد</h2>
+<div id="loginError" class="login-error" style="display:none"></div>
+<div class="form-group"><label>نام کاربری</label><input type="text" id="loginUsername" onkeydown="if(event.key==='Enter')doLogin()" /></div>
+<div class="form-group"><label>رمز عبور</label><input type="password" id="loginPassword" onkeydown="if(event.key==='Enter')doLogin()" /></div>
+<button class="btn-auth" onclick="doLogin()"><i class="fas fa-sign-in-alt"></i> ورود</button>
+<p class="auth-switch">حساب ندارید؟ <a href="/Account/Register">ثبت‌نام کنید</a></p>
+<form method="post" asp-action="GoogleLogin" style="margin-top:14px">
+  <input type="hidden" name="returnUrl" value="@ru" />
+  <button type="submit" class="btn-google"><i class="fab fa-google"></i> ورود با گوگل</button>
+</form>
+</div></div>
+<script>
+const RETURN_URL="@Html.Raw(ru)";
+async function doLogin(){
+  const u=document.getElementById('loginUsername').value.trim(), p=document.getElementById('loginPassword').value;
+  if(!u||!p){showErr('نام کاربری و رمز را وارد کنید');return;}
+  const r=await fetch('/Account/Login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&returnUrl=${encodeURIComponent(RETURN_URL)}`});
+  const d=await r.json();
+  if(d.success) window.location.href=d.returnUrl||'/'; else showErr(d.message);
+}
+function showErr(m){ const e=document.getElementById('loginError'); e.textContent=m; e.style.display='block'; }
+</script>

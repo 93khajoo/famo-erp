@@ -1,0 +1,110 @@
+@using FamoBoard.Services
+@model UserTimeReport?
+@{
+    ViewData["Title"] = "گزارش من";
+    int projectId = ViewBag.ProjectId;
+    string fromVal = ViewBag.From ?? "";
+    string toVal = ViewBag.To ?? "";
+    var mySalary = ViewBag.MySalary as UserSalaryReport;
+    string Fmt(long s) { var h=s/3600; var m=(s%3600)/60; var sec=s%60; return $"{h:D2}:{m:D2}:{sec:D2}"; }
+}
+<link rel="stylesheet" href="~/css/report.css" />
+<div class="report-page">
+  <div class="report-header">
+    <a href="/Board/Board/@projectId" class="btn-back"><i class="fas fa-arrow-right"></i> بازگشت</a>
+    <h1><i class="fas fa-user-clock"></i> گزارش من</h1>
+  </div>
+  <form method="get" action="/Report/Index" class="report-filter-bar">
+    <input type="hidden" name="projectId" value="@projectId" />
+    <div class="filter-group"><label><i class="fas fa-calendar"></i> از تاریخ</label><input type="date" name="from" value="@fromVal" /></div>
+    <div class="filter-group"><label><i class="fas fa-calendar"></i> تا تاریخ</label><input type="date" name="to" value="@toVal" /></div>
+    <button type="submit" class="btn-primary"><i class="fas fa-filter"></i> اعمال</button>
+    <a href="/Report/Index?projectId=@projectId" class="btn-secondary">حذف فیلتر</a>
+    <div class="quick-date-btns">
+      <button type="button" onclick="setRange(7)">۷ روز</button>
+      <button type="button" onclick="setRange(30)">۳۰ روز</button>
+      <button type="button" onclick="setThisMonth()">این ماه</button>
+    </div>
+  </form>
+
+  @if(Model==null || Model.TotalSeconds==0){
+    <div class="empty-report" style="background:white;border-radius:16px;border:1px solid var(--border);padding:80px;text-align:center;color:var(--mid)">
+      <i class="fas fa-clock" style="font-size:3rem;opacity:.25;display:block;margin-bottom:16px"></i>
+      <p>در این بازه زمانی هیچ فعالیتی ثبت نشده است.</p>
+    </div>
+  } else {
+    <div class="kpi-grid">
+      <div class="kpi-card teal"><div class="kpi-icon"><i class="fas fa-clock"></i></div><div class="kpi-value">@Fmt(Model.TotalSeconds)</div><div class="kpi-label">مجموع زمان کار</div></div>
+      <div class="kpi-card orange"><div class="kpi-icon"><i class="fas fa-tasks"></i></div><div class="kpi-value">@Model.Cards.Count</div><div class="kpi-label">تعداد تسک</div></div>
+      <div class="kpi-card blue"><div class="kpi-icon"><i class="fas fa-hourglass-half"></i></div><div class="kpi-value">@Math.Round(Model.TotalSeconds/3600.0,1) h</div><div class="kpi-label">مجموع به ساعت</div></div>
+      <div class="kpi-card green"><div class="kpi-icon"><i class="fas fa-star"></i></div><div class="kpi-value">@(Model.Cards.Any()?Fmt(Model.Cards.Max(c=>c.TotalSeconds)):"—")</div><div class="kpi-label">بیشترین زمان یک تسک</div></div>
+    </div>
+
+    <div class="charts-grid" style="margin-bottom:20px">
+      <div class="chart-card wide"><h3><i class="fas fa-chart-area"></i> روند کار روزانه من</h3><canvas id="myDailyChart" height="80"></canvas></div>
+      <div class="chart-card"><h3><i class="fas fa-chart-pie"></i> تقسیم زمان بین تسک‌ها</h3><canvas id="myPieChart" height="200"></canvas></div>
+      <div class="chart-card"><h3><i class="fas fa-chart-bar"></i> زمان‌برترین تسک‌ها</h3><canvas id="myBarChart" height="200"></canvas></div>
+    </div>
+
+    <div class="report-table-wrap">
+      <table class="report-table"><thead><tr><th>#</th><th>نام تسک</th><th>زمان صرف شده</th><th>درصد از کل</th><th>پیشرفت</th></tr></thead>
+      <tbody>
+      @{int rowNum=1;}
+      @foreach(var c in Model.Cards.OrderByDescending(x=>x.TotalSeconds)){ var pct=Model.TotalSeconds>0?Math.Round(c.TotalSeconds*100.0/Model.TotalSeconds,1):0;
+        <tr><td style="color:var(--mid);font-size:.8rem">@rowNum</td><td><strong>@c.CardTitle</strong></td><td><span class="time-badge">@Fmt(c.TotalSeconds)</span></td><td><strong>%@pct</strong></td><td><div class="mini-bar" style="width:160px"><div style="width:@pct%"></div></div></td></tr>
+        rowNum++;
+      }
+      </tbody></table>
+    </div>
+
+    @if(mySalary!=null && (mySalary.HourlyRate.HasValue || mySalary.TaskRate.HasValue)){
+    <div class="my-salary-card">
+      <h3><i class="fas fa-money-bill-wave"></i> حقوق و دستمزد من</h3>
+      <div class="my-salary-grid">
+        <div class="ms-item"><span class="ms-label">حقوق ساعتی</span><span class="ms-val">@mySalary.SalaryFromHours.ToString("N0") تومان</span></div>
+        <div class="ms-item"><span class="ms-label">حقوق تسکی</span><span class="ms-val">@mySalary.SalaryFromTasks.ToString("N0") تومان</span></div>
+        <div class="ms-item"><span class="ms-label">ناخالص</span><span class="ms-val">@mySalary.GrossSalary.ToString("N0") تومان</span></div>
+        <div class="ms-item @(mySalary.PenaltyAmount>0?"ms-danger":"")"><span class="ms-label">جریمه تأخیر</span><span class="ms-val">@(mySalary.PenaltyAmount>0?$"−{mySalary.PenaltyAmount:N0} تومان (٪{mySalary.PenaltyPercent:N0})":"—")</span></div>
+        <div class="ms-item ms-total"><span class="ms-label">خالص پرداختی</span><span class="ms-val">@mySalary.TotalSalary.ToString("N0") تومان</span></div>
+      </div>
+      @if(mySalary.OverdueCardCount>0){
+        <div class="my-overdue-box">
+          <div class="penalty-banner" style="margin-bottom:14px"><i class="fas fa-exclamation-triangle"></i> به ازای هر روز تأخیر از ددلاین هر کارت، <strong>۵٪</strong> از حقوق ناخالص شما کسر می‌شود.</div>
+          <table class="report-table"><thead><tr><th>کارت</th><th>ددلاین</th><th>وضعیت</th><th>روزهای تأخیر</th><th>جریمه</th></tr></thead>
+          <tbody>
+          @foreach(var oc in mySalary.OverdueCards){
+            <tr><td>@oc.CardTitle</td><td>@oc.Deadline.ToString("yyyy/MM/dd")</td>
+            <td>@if(oc.IsCompleted){<span class="list-badge" style="background:#E8F5E9;color:#2E7D32">تکمیل شده (دیرکرد)</span>}else{<span class="list-badge" style="background:#FFEBEE;color:#C62828">هنوز معوقه است</span>}</td>
+            <td><strong>@oc.LateDays روز</strong></td><td>%@(oc.LateDays*5)</td></tr>
+          }
+          </tbody></table>
+        </div>
+      } else {
+        <div class="ontime-banner"><i class="fas fa-check-circle"></i> همه کارت‌های شما در موعد مقرر تحویل داده شده — جریمه‌ای ثبت نشده است.</div>
+      }
+    </div>
+    }
+  }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+function setRange(days){ const to=new Date(),from=new Date(); from.setDate(from.getDate()-days); document.querySelector('input[name="from"]').value=from.toISOString().split('T')[0]; document.querySelector('input[name="to"]').value=to.toISOString().split('T')[0]; document.querySelector('form.report-filter-bar').submit(); }
+function setThisMonth(){ const now=new Date(); const from=new Date(now.getFullYear(),now.getMonth(),1); const to=new Date(now.getFullYear(),now.getMonth()+1,0); document.querySelector('input[name="from"]').value=from.toISOString().split('T')[0]; document.querySelector('input[name="to"]').value=to.toISOString().split('T')[0]; document.querySelector('form.report-filter-bar').submit(); }
+@if(Model!=null && Model.TotalSeconds>0){
+  var dailyJson=System.Text.Json.JsonSerializer.Serialize(Model.DailyBreakdown.Select(d=>new{date=d.Date.ToString("MM/dd"),secs=d.TotalSeconds}));
+  var cardLabelsJson=System.Text.Json.JsonSerializer.Serialize(Model.Cards.OrderByDescending(c=>c.TotalSeconds).Take(8).Select(c=>c.CardTitle.Length>16?c.CardTitle[..16]+"…":c.CardTitle));
+  var cardSecsJson=System.Text.Json.JsonSerializer.Serialize(Model.Cards.OrderByDescending(c=>c.TotalSeconds).Take(8).Select(c=>c.TotalSeconds));
+  var COLORS=new[]{"#2E7D72","#E07B39","#4DB6AC","#F4A261","#1976D2","#43A047","#8E24AA","#E53935"};
+  var colorsJson=System.Text.Json.JsonSerializer.Serialize(COLORS.Take(Model.Cards.Count).ToArray());
+  @:Chart.defaults.font={family:'Vazirmatn,Tahoma,sans-serif',size:12}; Chart.defaults.color='#4A6065';
+  @:const fmt=s=>{const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+':'+m.toString().padStart(2,'0');};
+  @:const dd=@Html.Raw(dailyJson);
+  @:new Chart(document.getElementById('myDailyChart'),{type:'line',data:{labels:dd.map(d=>d.date),datasets:[{data:dd.map(d=>+(d.secs/3600).toFixed(2)),borderColor:'#2E7D72',backgroundColor:'rgba(46,125,114,.1)',tension:.4,fill:true,pointRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'ساعت'}},x:{ticks:{maxTicksLimit:12}}}}});
+  @:const clabels=@Html.Raw(cardLabelsJson), csecs=@Html.Raw(cardSecsJson), ccolors=@Html.Raw(colorsJson);
+  @:new Chart(document.getElementById('myPieChart'),{type:'doughnut',data:{labels:clabels,datasets:[{data:csecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:ccolors,borderWidth:2}]},options:{responsive:true,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${fmt(csecs[ctx.dataIndex])}`}}}}});
+  @:new Chart(document.getElementById('myBarChart'),{type:'bar',data:{labels:clabels,datasets:[{data:csecs.map(s=>+(s/3600).toFixed(2)),backgroundColor:'#4DB6AC',borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,title:{display:true,text:'ساعت'}}}}});
+}
+</script>
+}

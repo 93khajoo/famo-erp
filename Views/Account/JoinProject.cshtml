@@ -1,0 +1,15 @@
+@model (int Id, string Name, string Token)
+@{ ViewData["Title"]="پیوستن به پروژه"; }
+<div class="login-page"><div class="login-box">
+<img src="~/images/logo.png" alt="FAMO" class="login-logo" onerror="this.style.display='none'" />
+<h2>دعوت به پروژه «@Model.Name»</h2>
+<p class="login-desc">شما به این پروژه دعوت شده‌اید.</p>
+<button class="btn-auth" onclick="joinNow()"><i class="fas fa-check"></i> پیوستن</button>
+</div></div>
+<script>
+async function joinNow(){
+  const r=await fetch('/Board/JoinProjectConfirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'@Model.Token'})});
+  const d=await r.json();
+  if(d.projectId) window.location.href=`/Board/Board/${d.projectId}`;
+}
+</script>

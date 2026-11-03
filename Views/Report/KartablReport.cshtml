@@ -1,0 +1,156 @@
+@using FamoBoard.Models
+@using System.Text.Json
+@using System.Linq
+@model SettlementReport
+@{
+    ViewData["Title"] = "گزارش تصفیه حساب";
+    var data = JsonSerializer.Deserialize<JsonElement>(Model.ReportJson);
+    string GetStr(JsonElement el, string key){ if(el.TryGetProperty(key,out var v) && v.ValueKind==JsonValueKind.String) return v.GetString()??""; return ""; }
+    bool isFirst = false;
+    if(data.TryGetProperty("isFirstSettlement", out var isFEl)) isFirst = isFEl.GetBoolean();
+    var settledAtJ = GetStr(data,"settledAtJ");
+    var periodFromJ = GetStr(data,"periodFromJ");
+    var memberName = GetStr(data,"memberName");
+    var note = GetStr(data,"note");
+    var projectName = Model.ProjectMember?.Project?.Name ?? "";
+}
+<link rel="stylesheet" href="~/css/report.css" />
+<style>
+.kr-page{ max-width:900px; margin:0 auto; padding:28px 16px; direction:rtl; font-family:inherit }
+.kr-back{ display:inline-flex; align-items:center; gap:6px; color:var(--mid); text-decoration:none; font-size:.88rem; margin-bottom:18px }
+.kr-back:hover{ color:var(--teal) }
+.kr-hero{ background:linear-gradient(135deg,var(--teal) 0%,#246058 100%); border-radius:16px; padding:28px 28px 24px; color:#fff; margin-bottom:24px; position:relative; overflow:hidden }
+.kr-hero::after{ content:''; position:absolute; left:-40px; top:-40px; width:180px; height:180px; background:rgba(255,255,255,.07); border-radius:50% }
+.kr-hero-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap }
+.kr-hero-title{ font-size:1.05rem; font-weight:600; opacity:.85; margin-bottom:6px }
+.kr-hero-amount{ font-size:2rem; font-weight:800; letter-spacing:-1px }
+.kr-hero-amount span{ font-size:.9rem; font-weight:500; opacity:.7; margin-right:6px }
+.kr-hero-meta{ margin-top:14px; display:flex; gap:18px; flex-wrap:wrap }
+.kr-hero-meta .m{ font-size:.82rem; opacity:.8; display:flex; align-items:center; gap:6px }
+.kr-period-badge{ background:rgba(255,255,255,.18); border-radius:20px; padding:4px 14px; font-size:.82rem; font-weight:600 }
+.kr-section{ background:#fff; border:1.5px solid var(--border); border-radius:14px; overflow:hidden; margin-bottom:20px }
+.kr-section-head{ padding:13px 18px; background:#f8f8f8; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; font-weight:700; font-size:.92rem; color:var(--dark) }
+.kr-section-head i{ color:var(--teal) }
+.kr-summary-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); }
+.kr-sum-item{ padding:16px 18px; border-left:1px solid var(--border); }
+.kr-sum-item:last-child{ border-left:none }
+.kr-sum-name{ font-size:.78rem; color:var(--mid); margin-bottom:4px }
+.kr-sum-count{ font-size:.75rem; color:var(--mid); margin-top:2px }
+.kr-sum-amount{ font-size:1.1rem; font-weight:700; color:var(--teal) }
+.kr-table{ width:100%; border-collapse:collapse }
+.kr-table th{ padding:10px 14px; background:#f5f5f5; font-size:.78rem; color:var(--mid); font-weight:600; text-align:right; border-bottom:1.5px solid var(--border) }
+.kr-table td{ padding:11px 14px; border-bottom:1px solid var(--border); font-size:.82rem; color:var(--dark); vertical-align:middle }
+.kr-table tr:last-child td{ border-bottom:none }
+.kr-table tr:hover td{ background:#f9fafb }
+.kr-type-badge{ display:inline-block; background:var(--teal-pale); color:var(--teal); border-radius:20px; padding:2px 9px; font-size:.72rem; font-weight:600 }
+.kr-rate{ font-weight:700; color:var(--teal) }
+.kr-note{ background:#FFF8E1; border:1px solid #FFE082; border-radius:10px; padding:12px 16px; margin-bottom:20px; font-size:.85rem; color:#5D4037; display:flex; align-items:flex-start; gap:10px }
+.kr-total-row td{ font-weight:700; background:#e0f2f1; color:var(--teal) }
+</style>
+
+<div class="kr-page">
+  <a href="/Report/Kartabl" class="kr-back"><i class="fas fa-arrow-right"></i> بازگشت به کارتابل</a>
+
+  <div class="kr-hero">
+    <div class="kr-hero-top">
+      <div>
+        <div class="kr-hero-title">گزارش تصفیه حساب — @projectName</div>
+        <div class="kr-hero-amount">@Model.Amount.ToString("N0") <span>تومان</span></div>
+      </div>
+      <div>
+        <div class="kr-period-badge">
+          @if(isFirst){
+            <span>از ابتدا تا @settledAtJ</span>
+          } else {
+            <span>@periodFromJ تا @settledAtJ</span>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="kr-hero-meta">
+      <div class="m"><i class="fas fa-user"></i> @memberName</div>
+      <div class="m"><i class="fas fa-calendar-check"></i> تاریخ تصفیه: @settledAtJ</div>
+      @if(data.TryGetProperty("cards", out var cardsHero)){
+        <div class="m"><i class="fas fa-tasks"></i> @cardsHero.GetArrayLength() تسک</div>
+      }
+    </div>
+  </div>
+
+  @if(!string.IsNullOrEmpty(note)){
+    <div class="kr-note"><i class="fas fa-sticky-note" style="color:#F9A825;margin-top:2px"></i><span>@note</span></div>
+  }
+
+  @* ── گزارش تجمیعی ── *@
+  @if(data.TryGetProperty("summary", out var summaryArr) && summaryArr.GetArrayLength()>0){
+    <div class="kr-section">
+      <div class="kr-section-head"><i class="fas fa-chart-pie"></i> گزارش تجمیعی بر اساس نوع تسک</div>
+      <div class="kr-summary-grid">
+        @foreach(var s in summaryArr.EnumerateArray()){
+          var typeName = s.TryGetProperty("typeName",out var tn)?tn.GetString()??"":"";
+          var count = s.TryGetProperty("count",out var cn)?cn.GetInt32():0;
+          var total = s.TryGetProperty("total",out var tot)?tot.GetDecimal():0;
+          <div class="kr-sum-item">
+            <div class="kr-sum-name">@typeName</div>
+            <div class="kr-sum-amount">@total.ToString("N0") <span style="font-size:.7rem;font-weight:400">تومان</span></div>
+            <div class="kr-sum-count">@count تسک</div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  @* ── لیست کامل تسک‌ها ── *@
+  @if(data.TryGetProperty("cards", out var cardsArr)){
+    var cards = cardsArr.EnumerateArray().ToList();
+    <div class="kr-section">
+      <div class="kr-section-head"><i class="fas fa-list-check"></i> جزئیات تسک‌ها (@cards.Count تسک)</div>
+      @if(cards.Any()){
+        <table class="kr-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>عنوان تسک</th>
+              <th>پروژه مشتری</th>
+              <th>نوع</th>
+              <th>مبلغ (تومان)</th>
+              <th>تاریخ ایجاد کارت</th>
+              <th>تاریخ اتمام</th>
+              <th>ددلاین</th>
+            </tr>
+          </thead>
+          <tbody>
+            @{int idx=0; decimal totalRate=0;}
+            @foreach(var c in cards){
+              idx++;
+              var title = c.TryGetProperty("title",out var t)?t.GetString()??"":"";
+              var taskType = c.TryGetProperty("taskType",out var tt)?tt.GetString()??"":"";
+              var clientProject = (c.TryGetProperty("clientProject",out var cp) && cp.ValueKind==JsonValueKind.String)?cp.GetString()??"":"";
+              var rate = c.TryGetProperty("rate",out var r)?r.GetDecimal():0;
+              var createdAtJ = c.TryGetProperty("createdAtJ",out var cj)?cj.GetString()??"":"";
+              var completedAtJ = (c.TryGetProperty("completedAtJ",out var compJ) && compJ.ValueKind==JsonValueKind.String)?compJ.GetString()??"":"";
+              var deadlineJ = (c.TryGetProperty("deadlineJ",out var dj) && dj.ValueKind==JsonValueKind.String)?dj.GetString()??"":"";
+              totalRate += rate;
+              <tr>
+                <td style="color:var(--mid)">@idx</td>
+                <td style="font-weight:600">@title</td>
+                <td>@if(!string.IsNullOrEmpty(clientProject)){<span style="display:inline-block;background:#E3F2FD;color:#1565C0;border-radius:20px;padding:2px 9px;font-size:.72rem;font-weight:600">@clientProject</span>}else{<text>—</text>}</td>
+                <td><span class="kr-type-badge">@taskType</span></td>
+                <td class="kr-rate">@rate.ToString("N0")</td>
+                <td>@createdAtJ</td>
+                <td>@(string.IsNullOrEmpty(completedAtJ) ? "—" : completedAtJ)</td>
+                <td>@(string.IsNullOrEmpty(deadlineJ) ? "—" : deadlineJ)</td>
+              </tr>
+            }
+            <tr class="kr-total-row">
+              <td colspan="4" style="text-align:left"><i class="fas fa-sigma"></i> جمع کل</td>
+              <td class="kr-rate">@totalRate.ToString("N0")</td>
+              <td colspan="3"></td>
+            </tr>
+          </tbody>
+        </table>
+      } else {
+        <div style="padding:24px;text-align:center;color:var(--mid);font-size:.88rem">هیچ تسکی در این بازه زمانی یافت نشد.</div>
+      }
+    </div>
+  }
+</div>
